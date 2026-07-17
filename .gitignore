@@ -1,0 +1,18 @@
+node_modules
+dist
+*.local
+.env
+.env.*
+!.env.example
+compose.private.yml
+.DS_Store
+.idea/
+
+# SQLite-Datenbank (lokale Daten)
+server/*.db
+server/*.db-shm
+server/*.db-wal
+
+# Optional bind-mounted Docker data directory
+data/*
+!data/.gitkeep

@@ -1,0 +1,13 @@
+.git
+.github
+.idea
+.env
+.env.*
+!.env.example
+node_modules
+dist
+data
+server/*.db
+server/*.db-shm
+server/*.db-wal
+npm-debug.log*

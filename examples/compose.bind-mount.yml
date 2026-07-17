@@ -1,0 +1,5 @@
+services:
+  app:
+    user: "0:0"
+    volumes:
+      - ./data:/data

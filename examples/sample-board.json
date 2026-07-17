@@ -1,0 +1,28 @@
+[
+  {
+    "id": "example-plan",
+    "title": "Write the project outline",
+    "category": "idea",
+    "phase": "focus",
+    "details": "- Define the goal\n- List the first concrete steps\n- Add useful links",
+    "contact": "",
+    "status": "todo",
+    "comments": [],
+    "researchRuns": [],
+    "documents": [],
+    "createdAt": 1784246400000
+  },
+  {
+    "id": "example-feedback",
+    "title": "Collect feedback",
+    "category": "waiting",
+    "phase": "next",
+    "details": "Keep decisions and follow-up notes in the comments.",
+    "contact": "",
+    "status": "progress",
+    "comments": [],
+    "researchRuns": [],
+    "documents": [],
+    "createdAt": 1784246400001
+  }
+]
