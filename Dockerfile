@@ -22,6 +22,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY server ./server
 COPY src/seed.js ./src/seed.js
+COPY src/subtasks.js ./src/subtasks.js
 RUN mkdir -p /data && chown -R node:node /data /app
 USER node
 EXPOSE 3001

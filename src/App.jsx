@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CATEGORIES, PHASES } from './seed.js'
 import { groupByCategory } from './grouping.js'
+import { SUBTASK_STATUSES, isDoneMoveAllowed } from './subtasks.js'
 import { api } from './api.js'
+import { formatLaneAge } from './laneAge.js'
 import CardModal from './CardModal.jsx'
 import BoardModal from './BoardModal.jsx'
 
@@ -30,9 +32,19 @@ export default function App() {
   const [dragId, setDragId] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
   const [collapsed, setCollapsed] = useState(() => new Set())
+  const [clockNow, setClockNow] = useState(Date.now())
+  const [undo, setUndo] = useState(null) // null | { id, from, to, title }
   const fileInputRef = useRef(null)
 
   const activeBoard = boards.find((b) => b.id === activeBoardId) || null
+
+  useEffect(() => {
+    setClockNow(Date.now())
+    if (!activeBoard?.show_lane_age) return undefined
+    const timer = window.setInterval(() => setClockNow(Date.now()), 60 * 1000)
+    return () => window.clearInterval(timer)
+  }, [activeBoard?.id, activeBoard?.show_lane_age])
+
   // ---------- Loading ----------
   async function loadCards(boardId) {
     try {
@@ -75,6 +87,7 @@ export default function App() {
     setFilterPhase('all')
     setQuery('')
     setOpenId(null)
+    setUndo(null)
     setCards([])
     loadCards(id)
   }
@@ -85,7 +98,7 @@ export default function App() {
 
   function onApiError(e) {
     console.error(e)
-    setError('Saving failed. Reloading from the server …')
+    setError(e?.message || 'Saving failed. Reloading from the server …')
     if (activeBoardId) loadCards(activeBoardId)
   }
 
@@ -148,6 +161,13 @@ export default function App() {
     })
   }
 
+  // Auto-dismiss the undo prompt after a short while.
+  useEffect(() => {
+    if (!undo) return undefined
+    const timer = setTimeout(() => setUndo(null), 8000)
+    return () => clearTimeout(timer)
+  }, [undo])
+
   // ---------- Metrics ----------
   const stats = useMemo(() => {
     const t = { todo: 0, progress: 0, done: 0 }
@@ -158,10 +178,46 @@ export default function App() {
     return { ...t, total, donePct: total ? Math.round((t.done / total) * 100) : 0 }
   }, [cards])
 
+  const progressLimit = activeBoard?.progress_limit ?? null
+  const progressAtLimit = progressLimit !== null && stats.progress >= progressLimit
+
+  function progressLimitMessage() {
+    return `In Progress limit (${progressLimit}) reached. Finish or move a task before adding another.`
+  }
+
   // ---------- Card actions ----------
-  function moveCard(id, status) {
-    setCards((cs) => cs.map((c) => (c.id === id ? { ...c, status } : c)))
-    api.update(id, { status }).then(refreshBoards).catch(onApiError)
+  async function moveCard(id, status, { record = true } = {}) {
+    const card = cards.find((candidate) => candidate.id === id)
+    if (!card || card.status === status) return true
+    if (status === 'progress' && card.status !== 'progress' && progressAtLimit) {
+      setError(progressLimitMessage())
+      return false
+    }
+    if (status === 'done' && !isDoneMoveAllowed(card)) {
+      setError(`“${card.title}” still has open subtasks. Finish or mark them before moving it to Done.`)
+      return false
+    }
+
+    const from = card.status
+    const statusChangedAt = Date.now()
+    setCards((cs) => cs.map((c) => (c.id === id ? { ...c, status, statusChangedAt } : c)))
+    try {
+      const updated = await api.update(id, { status })
+      setCards((cs) => cs.map((c) => (c.id === id ? updated : c)))
+      setError(null)
+      if (record) setUndo({ id, from, to: status, title: card.title })
+      refreshBoards()
+      return true
+    } catch (e) {
+      onApiError(e)
+      return false
+    }
+  }
+  function undoMove() {
+    if (!undo) return
+    const { id, from } = undo
+    setUndo(null)
+    moveCard(id, from, { record: false })
   }
   function updateCard(id, patch) {
     setCards((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)))
@@ -174,6 +230,11 @@ export default function App() {
   }
   function addCard(status = 'todo', category = 'general') {
     if (!activeBoardId) return
+    if (status === 'progress' && progressAtLimit) {
+      setError(progressLimitMessage())
+      return
+    }
+    const createdAt = Date.now()
     const nc = {
       id: uid(),
       board_id: activeBoardId,
@@ -186,11 +247,18 @@ export default function App() {
       comments: [],
       researchRuns: [],
       documents: [],
-      createdAt: Date.now(),
+      subtasks: [],
+      createdAt,
+      statusChangedAt: createdAt,
     }
     setCards((cs) => [...cs, nc])
     setOpenId(nc.id)
-    api.create(nc).then(refreshBoards).catch(onApiError)
+    api.create(nc)
+      .then((created) => {
+        setCards((cs) => cs.map((card) => card.id === nc.id ? created : card))
+        refreshBoards()
+      })
+      .catch(onApiError)
   }
   async function addComment(id, text) {
     try {
@@ -425,10 +493,20 @@ export default function App() {
         </div>
       )}
 
+      {undo && (
+        <div className="banner undo" role="status">
+          <span className="undo-text">
+            Moved “{undo.title}” to {COLUMNS.find((c) => c.id === undo.to)?.title || undo.to}.
+          </span>
+          <button type="button" className="btn tiny" onClick={undoMove}>Undo</button>
+          <button type="button" className="banner-dismiss" onClick={() => setUndo(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+
       {/* Status metrics */}
       <section className="dashboard" aria-label="Board status">
         <StatTile label="To Do" value={stats.todo} tone="muted" />
-        <StatTile label="In Progress" value={stats.progress} tone="accent" />
+        <StatTile label="In Progress" value={stats.progress} sub={progressLimit !== null ? `/ ${progressLimit}` : undefined} tone="accent" />
         <StatTile label="Done" value={`${stats.done}`} sub={`${stats.donePct}%`} tone="ok" />
       </section>
 
@@ -493,6 +571,16 @@ export default function App() {
               onDragEnd={() => { setDragId(null); setDragOverCol(null) }}
               onMove={moveCard}
               onAddCard={() => addCard(col.id)}
+              progressLimit={col.id === 'progress' ? progressLimit : null}
+              progressAtLimit={col.id === 'progress' && progressAtLimit}
+              dropBlocked={Boolean(
+                dragId
+                && col.id === 'progress'
+                && progressAtLimit
+                && cards.find((card) => card.id === dragId)?.status !== 'progress'
+              )}
+              showLaneAge={Boolean(activeBoard?.show_lane_age)}
+              now={clockNow}
             />
           ))}
         </main>
@@ -526,6 +614,9 @@ export default function App() {
           onClose={() => setBoardModal(null)}
           onSave={saveBoard}
           onDelete={deleteBoard}
+          progressCount={boardModal.board?.id === activeBoardId
+            ? stats.progress
+            : (boardModal.board?.progressCount || 0)}
         />
       )}
 
@@ -542,7 +633,26 @@ function StatTile({ label, value, sub, tone = 'muted' }) {
   )
 }
 
-function BoardColumn({ col, groups, collapsed, onToggle, dragOver, onDragOver, onDragLeave, onDrop, onOpen, onDragStart, onDragEnd, onMove, onAddCard }) {
+function BoardColumn({
+  col,
+  groups,
+  collapsed,
+  onToggle,
+  dragOver,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onOpen,
+  onDragStart,
+  onDragEnd,
+  onMove,
+  onAddCard,
+  progressLimit,
+  progressAtLimit,
+  dropBlocked,
+  showLaneAge,
+  now,
+}) {
   const headingId = `column-${col.id}`
   // Cards grouped by category, keeping only categories that have a card in this lane.
   const lanes = groups
@@ -552,15 +662,27 @@ function BoardColumn({ col, groups, collapsed, onToggle, dragOver, onDragOver, o
 
   return (
     <section
-      className={`column ${dragOver ? 'dragover' : ''}`}
+      className={`column ${dragOver ? 'dragover' : ''} ${progressAtLimit ? 'limit-reached' : ''}`}
       aria-labelledby={headingId}
-      onDragOver={(e) => { e.preventDefault(); onDragOver() }}
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = dropBlocked ? 'none' : 'move'
+        if (dropBlocked) onDragLeave()
+        else onDragOver()
+      }}
       onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      onDrop={(e) => { e.preventDefault(); onDrop() }}
     >
       <div className="column-head">
         <h2 id={headingId}>{col.title}</h2>
-        <span className="count" aria-label={`${total} ${total === 1 ? 'task' : 'tasks'}`}>{total}</span>
+        <span
+          className="count"
+          aria-label={progressLimit === null
+            ? `${total} ${total === 1 ? 'task' : 'tasks'}`
+            : `${total} of ${progressLimit} allowed tasks`}
+        >
+          {total}{progressLimit !== null && ` / ${progressLimit}`}
+        </span>
       </div>
       <div className="column-body">
         {lanes.map(({ group, cards }) => {
@@ -594,6 +716,9 @@ function BoardColumn({ col, groups, collapsed, onToggle, dragOver, onDragOver, o
                       onDragStart={() => onDragStart(card.id)}
                       onDragEnd={onDragEnd}
                       onMove={(status) => onMove(card.id, status)}
+                      progressEntryBlocked={progressAtLimit}
+                      showLaneAge={showLaneAge}
+                      now={now}
                     />
                   ))}
                 </div>
@@ -603,17 +728,35 @@ function BoardColumn({ col, groups, collapsed, onToggle, dragOver, onDragOver, o
         })}
         {total === 0 && <div className="empty">No tasks here</div>}
       </div>
-      <button type="button" className="addcard" onClick={onAddCard}>+ Add task</button>
+      <button
+        type="button"
+        className="addcard"
+        onClick={onAddCard}
+        disabled={progressAtLimit}
+        title={progressAtLimit ? `In Progress limit (${progressLimit}) reached` : undefined}
+      >
+        {progressAtLimit ? 'In Progress limit reached' : '+ Add task'}
+      </button>
     </section>
   )
 }
 
-function CardTile({ card, onOpen, onDragStart, onDragEnd, onMove }) {
+function CardTile({ card, onOpen, onDragStart, onDragEnd, onMove, progressEntryBlocked, showLaneAge, now }) {
   const cat = CATEGORIES[card.category] || { label: card.category, color: '#888' }
   const phase = PHASES[card.phase]
   const nextStatus = card.status === 'todo' ? 'progress' : card.status === 'progress' ? 'done' : null
   const prevStatus = card.status === 'done' ? 'progress' : card.status === 'progress' ? 'todo' : null
   const statusLabel = { todo: 'To Do', progress: 'In Progress', done: 'Done' }
+
+  const [expanded, setExpanded] = useState(false)
+  const [subtasksOpen, setSubtasksOpen] = useState(false)
+  const detailId = useId()
+  const subtaskListId = useId()
+  const subtasks = card.subtasks || []
+  const hasDetail = Boolean(card.details) || subtasks.length > 0
+  const doneBlocked = nextStatus === 'done' && !isDoneMoveAllowed(card)
+  const progressBlocked = nextStatus === 'progress' && progressEntryBlocked
+  const forwardBlocked = doneBlocked || progressBlocked
 
   return (
     <article
@@ -623,14 +766,63 @@ function CardTile({ card, onOpen, onDragStart, onDragEnd, onMove }) {
       onDragEnd={onDragEnd}
       style={{ '--cat': cat.color }}
     >
-      <button type="button" className="card-open" onClick={onOpen} aria-label={`Open task: ${card.title}`}>
-        <span className="card-tags">
-          {card.category && <span className="tag cat">{cat.label}</span>}
-          {phase && <span className="tag phase" style={{ '--ph': phase.color }}>{phase.label}</span>}
-        </span>
-        <span className="card-title" role="heading" aria-level="3">{card.title}</span>
-        {card.contact && <span className="card-contact">{card.contact}</span>}
-      </button>
+      <div className={`card-head ${hasDetail ? '' : 'no-caret'}`}>
+        {hasDetail && (
+          <button
+            type="button"
+            className="card-caret"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            aria-controls={detailId}
+            aria-label={expanded ? `Collapse ${card.title}` : `Expand ${card.title}`}
+          >
+            {expanded ? '▾' : '▸'}
+          </button>
+        )}
+        <button type="button" className="card-open" onClick={onOpen} aria-label={`Open task: ${card.title}`}>
+          <span className="card-tags">
+            {card.category && <span className="tag cat">{cat.label}</span>}
+            {phase && <span className="tag phase" style={{ '--ph': phase.color }}>{phase.label}</span>}
+          </span>
+          <span className="card-title" role="heading" aria-level="3">{card.title}</span>
+          {card.contact && <span className="card-contact">{card.contact}</span>}
+        </button>
+      </div>
+
+      {expanded && hasDetail && (
+        <div className="card-detail" id={detailId}>
+          {card.details
+            ? <p className="card-detail-text">{card.details}</p>
+            : <p className="card-detail-empty">No details yet.</p>}
+          {subtasks.length > 0 && (
+            <div className="card-subtasks">
+              <button
+                type="button"
+                className="subtasks-toggle"
+                onClick={() => setSubtasksOpen((v) => !v)}
+                aria-expanded={subtasksOpen}
+                aria-controls={subtaskListId}
+              >
+                <span aria-hidden="true">{subtasksOpen ? '▾' : '▸'}</span>
+                <span>Subtasks</span>
+                <span className="count">{card.doneCount}/{card.subtaskCount}</span>
+              </button>
+              {subtasksOpen && (
+                <ul className="card-subtask-list" id={subtaskListId}>
+                  {subtasks.map((s) => (
+                    <li key={s.id} className={`card-subtask-row subtask-${s.status}`}>
+                      <span className="card-subtask-icon" aria-hidden="true">
+                        {(SUBTASK_STATUSES[s.status] || '○').split(' ')[0]}
+                      </span>
+                      <span className="card-subtask-title">{s.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       <div className="card-foot">
         <div className="card-chips">
           {card.status === 'done' && <span className="badge badge-done">✓ Done</span>}
@@ -643,13 +835,36 @@ function CardTile({ card, onOpen, onDragStart, onDragEnd, onMove }) {
           {(card.researchRuns || []).length > 0 && <span className="chip ai-chip" aria-label={`${card.researchRuns.length} research results`}>AI {card.researchRuns.length}</span>}
           {(card.documents || []).length > 0 && <span className="chip document-chip" aria-label={`${card.documents.length} attachments`}>📎 {card.documents.length}</span>}
           {(card.subtasks || []).length > 0 && <span className="chip subtask-chip" aria-label={`${card.subtasks.length} subtasks`}>📋 {card.subtasks.length}</span>}
+          {showLaneAge && (
+            <span
+              className="chip lane-age-chip"
+              aria-label={`In this column for ${formatLaneAge(card.statusChangedAt || card.createdAt, now)}`}
+              title={`Entered this column ${new Date(card.statusChangedAt || card.createdAt).toLocaleString()}`}
+            >
+              ◷ {formatLaneAge(card.statusChangedAt || card.createdAt, now)}
+            </span>
+          )}
         </div>
         <div className="movebtns">
           {prevStatus && (
-            <button type="button" title="Move back" aria-label={`Move ${card.title} to ${statusLabel[prevStatus]}`} onClick={() => onMove(prevStatus)}>◀</button>
+            <button
+              type="button"
+              title={prevStatus === 'progress' && progressEntryBlocked ? 'In Progress limit reached' : 'Move back'}
+              aria-label={`Move ${card.title} to ${statusLabel[prevStatus]}`}
+              onClick={() => onMove(prevStatus)}
+              disabled={prevStatus === 'progress' && progressEntryBlocked}
+            >◀</button>
           )}
           {nextStatus && (
-            <button type="button" title="Move forward" aria-label={`Move ${card.title} to ${statusLabel[nextStatus]}`} onClick={() => onMove(nextStatus)}>▶</button>
+            <button
+              type="button"
+              title={doneBlocked
+                ? 'Finish or mark all subtasks first'
+                : progressBlocked ? 'In Progress limit reached' : 'Move forward'}
+              aria-label={`Move ${card.title} to ${statusLabel[nextStatus]}`}
+              onClick={() => onMove(nextStatus)}
+              disabled={forwardBlocked}
+            >▶</button>
           )}
         </div>
       </div>

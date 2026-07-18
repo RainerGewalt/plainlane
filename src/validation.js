@@ -3,6 +3,8 @@
 export const BOARD_NAME_MAX = 60
 export const SUBTASK_LIMIT_MIN = 1
 export const SUBTASK_LIMIT_MAX = 10
+export const PROGRESS_LIMIT_MIN = 1
+export const PROGRESS_LIMIT_MAX = 999
 
 export function validateBoard(values) {
   const errors = {}
@@ -16,6 +18,14 @@ export function validateBoard(values) {
   const limit = Number(values.subtaskLimit)
   if (!Number.isInteger(limit) || limit < SUBTASK_LIMIT_MIN || limit > SUBTASK_LIMIT_MAX) {
     errors.subtaskLimit = `Choose a whole number from ${SUBTASK_LIMIT_MIN} to ${SUBTASK_LIMIT_MAX}.`
+  }
+
+  const progressLimitValue = String(values.progressLimit ?? '').trim()
+  if (progressLimitValue) {
+    const progressLimit = Number(progressLimitValue)
+    if (!Number.isInteger(progressLimit) || progressLimit < PROGRESS_LIMIT_MIN || progressLimit > PROGRESS_LIMIT_MAX) {
+      errors.progressLimit = `Leave empty or choose a whole number from ${PROGRESS_LIMIT_MIN} to ${PROGRESS_LIMIT_MAX}.`
+    }
   }
 
   return errors

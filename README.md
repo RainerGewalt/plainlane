@@ -35,14 +35,16 @@ Open [http://localhost:8080](http://localhost:8080). The start script also print
 ## What you get
 
 - Browser-managed boards and cards
-- Subtasks with per-step statuses, progress indicators, and a configurable per-board limit (1–10); the card's lane remains its overall status
 - Drag and drop plus keyboard-accessible move buttons
+- Inline card expansion for details and subtasks
+- Move undo and a guard against completing cards with open subtasks
+- Optional time-in-column hints on cards
+- An optional per-board limit for main tasks in **In Progress**
 - Search and lightweight category/phase filters
 - Comments and notes on every card
 - PDF, email, image, Office, and text attachments up to 15 MB
 - A status and note for every attachment
-- At-a-glance board and card progress with counts, badges, and progress bars
-- Full board import/export, including subtasks and file contents
+- Full board import/export, including file contents
 - Optional OpenAI web research with saved source links
 - NGINX for desktop, tablet, and phone access
 - One mounted SQLite database—no external database service
@@ -64,6 +66,8 @@ AI usage may cost money. Verify important information at the linked original sou
 ## Data and access
 
 The complete state lives in `/data/plainlane.db` inside the Docker volume. Use **Export** in the browser for a portable board backup. Exports include attachment contents, so treat them as sensitive files.
+
+Each card also exposes `statusChangedAt` through the local API and JSON export. Plainlane updates this timestamp only when the main card changes lane; it powers the optional time-in-column hint. Board responses expose `progress_limit` (`null` means unlimited) and `show_lane_age` (`0` or `1`) for the corresponding board options.
 
 Plainlane has **no login screen**. Anyone who can reach its port can use the app and access its files. Keep it on a trusted network, bind it to localhost, or place it behind an authenticated reverse proxy. Do not expose port 8080 directly to the internet.
 

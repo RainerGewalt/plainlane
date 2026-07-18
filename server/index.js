@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 import { loadEnvFile } from 'node:process'
 import path from 'path'
 import { SEED_CARDS } from '../src/seed.js'
+import { subtasksResolved } from '../src/subtasks.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ENV_PATH = path.join(__dirname, '..', '.env')
@@ -26,6 +27,9 @@ const DEFAULT_BOARD = {
   emoji: '👋',
   accent: '#4f46e5',
   kind: 'generic',
+  subtask_limit: 10,
+  progress_limit: null,
+  show_lane_age: 0,
 }
 
 const db = new Database(DB_PATH)
@@ -40,7 +44,10 @@ db.exec(`
     accent    TEXT,
     kind      TEXT NOT NULL DEFAULT 'generic',
     ord       INTEGER NOT NULL DEFAULT 0,
-    createdAt INTEGER NOT NULL
+    createdAt INTEGER NOT NULL,
+    subtask_limit INTEGER NOT NULL DEFAULT 10,
+    progress_limit INTEGER DEFAULT NULL,
+    show_lane_age INTEGER NOT NULL DEFAULT 0
   );
   CREATE TABLE IF NOT EXISTS cards (
     id        TEXT PRIMARY KEY,
@@ -51,7 +58,8 @@ db.exec(`
     contact   TEXT,
     status    TEXT NOT NULL DEFAULT 'todo',
     ord       INTEGER NOT NULL DEFAULT 0,
-    createdAt INTEGER
+    createdAt INTEGER,
+    status_changed_at INTEGER
   );
   CREATE TABLE IF NOT EXISTS subtasks (
     id        TEXT PRIMARY KEY,
@@ -106,31 +114,43 @@ db.exec(`
 // Additive schema migration for databases created by earlier versions.
 const cardColumns = db.prepare('PRAGMA table_info(cards)').all().map((c) => c.name)
 if (!cardColumns.includes('board_id')) db.exec('ALTER TABLE cards ADD COLUMN board_id TEXT')
+if (!cardColumns.includes('status_changed_at')) db.exec('ALTER TABLE cards ADD COLUMN status_changed_at INTEGER')
+db.prepare('UPDATE cards SET status_changed_at = ? WHERE status_changed_at IS NULL').run(Date.now())
 
 const boardColumns = db.prepare('PRAGMA table_info(boards)').all().map((c) => c.name)
 if (!boardColumns.includes('subtask_limit')) db.exec('ALTER TABLE boards ADD COLUMN subtask_limit INTEGER NOT NULL DEFAULT 10')
+if (!boardColumns.includes('progress_limit')) db.exec('ALTER TABLE boards ADD COLUMN progress_limit INTEGER DEFAULT NULL')
+if (!boardColumns.includes('show_lane_age')) db.exec('ALTER TABLE boards ADD COLUMN show_lane_age INTEGER NOT NULL DEFAULT 0')
 
 // ---------- Prepared statements ----------
 const stmt = {
   allBoards: db.prepare('SELECT * FROM boards ORDER BY ord ASC, createdAt ASC'),
   oneBoard: db.prepare('SELECT * FROM boards WHERE id = ?'),
   insBoard: db.prepare(
-    'INSERT INTO boards (id, name, emoji, accent, kind, ord, createdAt) VALUES (@id, @name, @emoji, @accent, @kind, @ord, @createdAt)'
+    `INSERT INTO boards
+      (id, name, emoji, accent, kind, ord, createdAt, subtask_limit, progress_limit, show_lane_age)
+     VALUES
+      (@id, @name, @emoji, @accent, @kind, @ord, @createdAt, @subtask_limit, @progress_limit, @show_lane_age)`
   ),
   delBoard: db.prepare('DELETE FROM boards WHERE id = ?'),
   maxBoardOrd: db.prepare('SELECT COALESCE(MAX(ord), -1) AS m FROM boards'),
   countBoards: db.prepare('SELECT COUNT(*) AS n FROM boards'),
   boardCounts: db.prepare(
     `SELECT board_id, COUNT(*) AS total,
-            SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done
+            SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
+            SUM(CASE WHEN status = 'progress' THEN 1 ELSE 0 END) AS progress
      FROM cards GROUP BY board_id`
   ),
 
   cardsByBoard: db.prepare(
-    'SELECT id, board_id, title, category, phase, details, contact, status, ord, createdAt FROM cards WHERE board_id = ? ORDER BY ord ASC, createdAt ASC'
+    `SELECT id, board_id, title, category, phase, details, contact, status, ord, createdAt,
+            status_changed_at AS statusChangedAt
+     FROM cards WHERE board_id = ? ORDER BY ord ASC, createdAt ASC`
   ),
   oneCard: db.prepare(
-    'SELECT id, board_id, title, category, phase, details, contact, status, ord, createdAt FROM cards WHERE id = ?'
+    `SELECT id, board_id, title, category, phase, details, contact, status, ord, createdAt,
+            status_changed_at AS statusChangedAt
+     FROM cards WHERE id = ?`
   ),
   cardComments: db.prepare('SELECT id, text, ts FROM comments WHERE card_id = ? ORDER BY ts ASC'),
   cardResearch: db.prepare(
@@ -157,8 +177,10 @@ const stmt = {
   ),
   maxOrd: db.prepare('SELECT COALESCE(MAX(ord), -1) AS m FROM cards WHERE board_id = ?'),
   insCard: db.prepare(
-    `INSERT INTO cards (id, board_id, title, category, phase, details, contact, status, ord, createdAt)
-     VALUES (@id, @board_id, @title, @category, @phase, @details, @contact, @status, @ord, @createdAt)`
+    `INSERT INTO cards
+      (id, board_id, title, category, phase, details, contact, status, ord, createdAt, status_changed_at)
+     VALUES
+      (@id, @board_id, @title, @category, @phase, @details, @contact, @status, @ord, @createdAt, @status_changed_at)`
   ),
   delCard: db.prepare('DELETE FROM cards WHERE id = ?'),
   delCardsByBoard: db.prepare('DELETE FROM cards WHERE board_id = ?'),
@@ -188,6 +210,7 @@ const stmt = {
      VALUES (@id, @card_id, @filename, @mime_type, @size, @kind, @status, @note, @data, @createdAt)`
   ),
   delDocument: db.prepare('DELETE FROM documents WHERE id = ?'),
+  progressCount: db.prepare("SELECT COUNT(*) AS n FROM cards WHERE board_id = ? AND status = 'progress'"),
   count: db.prepare('SELECT COUNT(*) AS n FROM cards'),
 }
 
@@ -219,7 +242,7 @@ function hydrateCard(row) {
   const completionPct = subtasks.length > 0 ? Math.round((finalCount / subtasks.length) * 100) : 100
 
   const latestSubtaskTime = subtasks.length > 0 ? Math.max(...subtasks.map(s => s.createdAt)) : row.createdAt
-  const updatedAt = Math.max(row.createdAt, latestSubtaskTime)
+  const updatedAt = Math.max(row.createdAt || 0, row.statusChangedAt || 0, latestSubtaskTime || 0)
 
   return {
     ...row,
@@ -241,12 +264,52 @@ function listCards(boardId) {
 function listBoards() {
   const counts = {}
   for (const row of stmt.boardCounts.all()) {
-    counts[row.board_id] = { total: row.total, done: row.done || 0 }
+    counts[row.board_id] = { total: row.total, done: row.done || 0, progress: row.progress || 0 }
   }
   return stmt.allBoards.all().map((board) => {
-    const c = counts[board.id] || { total: 0, done: 0 }
-    return { ...board, cardCount: c.total, doneCount: c.done, openCount: c.total - c.done }
+    const c = counts[board.id] || { total: 0, done: 0, progress: 0 }
+    return {
+      ...board,
+      cardCount: c.total,
+      doneCount: c.done,
+      progressCount: c.progress,
+      openCount: c.total - c.done,
+    }
   })
+}
+
+function parseProgressLimit(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null
+  const limit = Number(value)
+  if (!Number.isInteger(limit) || limit < 1 || limit > 999) {
+    const error = new Error('In Progress limit must be empty or a whole number from 1 to 999.')
+    error.status = 400
+    throw error
+  }
+  return limit
+}
+
+function toSqliteBoolean(value) {
+  return value === true || value === 1 || value === '1' ? 1 : 0
+}
+
+function progressLimitError(limit) {
+  const error = new Error(`In Progress limit (${limit}) reached for this board.`)
+  error.status = 409
+  return error
+}
+
+function ensureProgressCapacity(boardId) {
+  const board = stmt.oneBoard.get(boardId)
+  if (!board) {
+    const error = new Error('Unknown board.')
+    error.status = 400
+    throw error
+  }
+  if (board.progress_limit !== null && stmt.progressCount.get(boardId).n >= board.progress_limit) {
+    throw progressLimitError(board.progress_limit)
+  }
+  return board
 }
 
 function insertResearch(cardId, run) {
@@ -375,6 +438,7 @@ const importIntoBoard = db.transaction((boardId, cards) => {
       status: card.status || 'todo',
       ord: Number.isFinite(card.ord) ? card.ord : index,
       createdAt: card.createdAt || Date.now(),
+      status_changed_at: card.statusChangedAt || card.createdAt || Date.now(),
     })
     ;(card.comments || []).forEach((comment) =>
       stmt.insComment.run({
@@ -557,33 +621,61 @@ app.get('/api/boards', (_req, res) => res.json(listBoards()))
 
 app.post('/api/boards', (req, res) => {
   const body = req.body || {}
-  const board = {
-    id: rndId('board'),
-    name: String(body.name || '').trim() || 'New board',
-    emoji: (body.emoji || '🗂️').slice(0, 8),
-    accent: body.accent || '#4f46e5',
-    kind: 'generic',
-    ord: stmt.maxBoardOrd.get().m + 1,
-    createdAt: Date.now(),
+  try {
+    const board = {
+      id: rndId('board'),
+      name: String(body.name || '').trim() || 'New board',
+      emoji: (body.emoji || '🗂️').slice(0, 8),
+      accent: body.accent || '#4f46e5',
+      kind: 'generic',
+      ord: stmt.maxBoardOrd.get().m + 1,
+      createdAt: Date.now(),
+      subtask_limit: Math.max(1, Math.min(10, Number(body.subtask_limit) || 10)),
+      progress_limit: parseProgressLimit(body.progress_limit),
+      show_lane_age: toSqliteBoolean(body.show_lane_age),
+    }
+    stmt.insBoard.run(board)
+    res.status(201).json({
+      ...board,
+      cardCount: 0,
+      doneCount: 0,
+      progressCount: 0,
+      openCount: 0,
+    })
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message })
   }
-  stmt.insBoard.run(board)
-  res.status(201).json({ ...board, cardCount: 0, doneCount: 0, openCount: 0 })
 })
 
 app.put('/api/boards/:id', (req, res) => {
   const board = stmt.oneBoard.get(req.params.id)
   if (!board) return res.status(404).json({ error: 'Board not found.' })
-  const allowed = ['name', 'emoji', 'accent', 'ord', 'subtask_limit']
-  const keys = allowed.filter((key) => key in (req.body || {}))
-  if (keys.length) {
-    const setSql = keys.map((key) => `${key} = @${key}`).join(', ')
-    const values = { ...req.body, id: req.params.id }
-    if (values.subtask_limit) {
-      values.subtask_limit = Math.max(1, Math.min(10, Number(values.subtask_limit)))
+  const body = req.body || {}
+  const allowed = ['name', 'emoji', 'accent', 'ord', 'subtask_limit', 'progress_limit', 'show_lane_age']
+  const keys = allowed.filter((key) => key in body)
+  try {
+    if (keys.length) {
+      const setSql = keys.map((key) => `${key} = @${key}`).join(', ')
+      const values = { ...body, id: req.params.id }
+      if ('subtask_limit' in body) {
+        values.subtask_limit = Math.max(1, Math.min(10, Number(body.subtask_limit) || 10))
+      }
+      if ('progress_limit' in body) {
+        values.progress_limit = parseProgressLimit(body.progress_limit)
+        const currentCount = stmt.progressCount.get(req.params.id).n
+        if (values.progress_limit !== null && values.progress_limit < currentCount) {
+          return res.status(409).json({
+            error: `In Progress already contains ${currentCount} tasks. Choose a limit of at least ${currentCount}.`,
+          })
+        }
+      }
+      if ('show_lane_age' in body) values.show_lane_age = toSqliteBoolean(body.show_lane_age)
+      db.prepare(`UPDATE boards SET ${setSql} WHERE id = @id`).run(values)
     }
-    db.prepare(`UPDATE boards SET ${setSql} WHERE id = @id`).run(values)
+    res.json(stmt.oneBoard.get(req.params.id))
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message })
   }
-  res.json(stmt.oneBoard.get(req.params.id))
 })
 
 app.delete('/api/boards/:id', (req, res) => {
@@ -609,9 +701,16 @@ app.get('/api/boards/:id/export', (req, res) => {
 })
 
 app.post('/api/boards/:id/import', (req, res) => {
-  if (!stmt.oneBoard.get(req.params.id)) return res.status(404).json({ error: 'Board not found.' })
+  const board = stmt.oneBoard.get(req.params.id)
+  if (!board) return res.status(404).json({ error: 'Board not found.' })
   const cards = req.body?.cards
   if (!Array.isArray(cards)) return res.status(400).json({ error: 'Expected { cards: [...] }.' })
+  const progressCount = cards.filter((card) => (card.status || 'todo') === 'progress').length
+  if (board.progress_limit !== null && progressCount > board.progress_limit) {
+    return res.status(409).json({
+      error: `Import contains ${progressCount} In Progress tasks, exceeding this board's limit (${board.progress_limit}).`,
+    })
+  }
   importIntoBoard(req.params.id, cards)
   res.json(listCards(req.params.id))
 })
@@ -621,7 +720,14 @@ app.post('/api/cards', (req, res) => {
   const body = req.body || {}
   const boardId = String(body.board_id || DEFAULT_BOARD.id)
   if (!stmt.oneBoard.get(boardId)) return res.status(400).json({ error: 'Unknown board.' })
+  const status = body.status || 'todo'
+  try {
+    if (status === 'progress') ensureProgressCapacity(boardId)
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message })
+  }
   const id = String(body.id || rndId('c'))
+  const createdAt = body.createdAt || Date.now()
   const card = {
     id,
     board_id: boardId,
@@ -630,9 +736,10 @@ app.post('/api/cards', (req, res) => {
     phase: body.phase || null,
     details: body.details || '',
     contact: body.contact || '',
-    status: body.status || 'todo',
+    status,
     ord: stmt.maxOrd.get(boardId).m + 1,
-    createdAt: body.createdAt || Date.now(),
+    createdAt,
+    status_changed_at: createdAt,
   }
   stmt.insCard.run(card)
   res.status(201).json(hydrateCard(stmt.oneCard.get(id)))
@@ -641,12 +748,39 @@ app.post('/api/cards', (req, res) => {
 app.put('/api/cards/:id', (req, res) => {
   const existing = stmt.oneCard.get(req.params.id)
   if (!existing) return res.status(404).json({ error: 'Task not found.' })
-  const keys = UPDATABLE.filter((key) => key in (req.body || {}))
-  if (keys.length) {
-    const setSql = keys.map((key) => `${key} = @${key}`).join(', ')
-    db.prepare(`UPDATE cards SET ${setSql} WHERE id = @id`).run({ ...req.body, id: req.params.id })
+  const body = req.body || {}
+  const nextBoardId = 'board_id' in body ? String(body.board_id) : existing.board_id
+  const nextStatus = 'status' in body ? String(body.status) : existing.status
+  const entersProgress = nextStatus === 'progress'
+    && (existing.status !== 'progress' || existing.board_id !== nextBoardId)
+
+  try {
+    if (!stmt.oneBoard.get(nextBoardId)) {
+      return res.status(400).json({ error: 'Unknown board.' })
+    }
+    if (entersProgress) ensureProgressCapacity(nextBoardId)
+
+    // A task may only enter Done once all of its subtasks have left 'todo'.
+    if (nextStatus === 'done' && existing.status !== 'done'
+        && !subtasksResolved(stmt.cardSubtasks.all(req.params.id))) {
+      return res.status(409).json({ error: 'Finish or mark every subtask before moving this task to Done.' })
+    }
+
+    const keys = UPDATABLE.filter((key) => key in body)
+    const statusChanged = nextStatus !== existing.status
+    if (keys.length || statusChanged) {
+      const assignments = keys.map((key) => `${key} = @${key}`)
+      const values = { ...body, id: req.params.id }
+      if (statusChanged) {
+        assignments.push('status_changed_at = @status_changed_at')
+        values.status_changed_at = Date.now()
+      }
+      db.prepare(`UPDATE cards SET ${assignments.join(', ')} WHERE id = @id`).run(values)
+    }
+    res.json(hydrateCard(stmt.oneCard.get(req.params.id)))
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message })
   }
-  res.json(hydrateCard(stmt.oneCard.get(req.params.id)))
 })
 
 app.delete('/api/cards/:id', (req, res) => {

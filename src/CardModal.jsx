@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { CATEGORIES, PHASES } from './seed.js'
 import { keepFocusInside } from './dialog.js'
+import { SUBTASK_STATUSES, SUBTASK_STATUS_ORDER } from './subtasks.js'
 
 function fmt(ts) {
   return new Date(ts).toLocaleString('en-GB', {
@@ -40,18 +41,9 @@ function fileToBase64(file) {
   })
 }
 
-const SUBTASK_STATUSES = {
-  todo: '○ To do',
-  done: '✓ Done',
-  wont_do: '✗ Won\'t do',
-  question: '❓ Question',
-  old: '⏱ Old',
-}
-
 function SubtaskItem({ subtask, onUpdate, onDelete }) {
-  const statusOrder = ['todo', 'done', 'wont_do', 'question', 'old']
-  const currentIndex = statusOrder.indexOf(subtask.status)
-  const nextStatus = statusOrder[(currentIndex + 1) % statusOrder.length]
+  const currentIndex = SUBTASK_STATUS_ORDER.indexOf(subtask.status)
+  const nextStatus = SUBTASK_STATUS_ORDER[(currentIndex + 1) % SUBTASK_STATUS_ORDER.length]
 
   return (
     <div className="subtask-item">

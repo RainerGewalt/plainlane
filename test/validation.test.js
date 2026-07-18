@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { validateBoard, BOARD_NAME_MAX } from '../src/validation.js'
 
-const valid = { name: 'Home', emoji: '🏠', subtaskLimit: '5' }
+const valid = { name: 'Home', emoji: '🏠', subtaskLimit: '5', progressLimit: '' }
 
 test('accepts a well-formed board', () => {
   assert.deepEqual(validateBoard(valid), {})
@@ -33,7 +33,17 @@ test('subtask limit must be a whole number from 1 to 10', () => {
   assert.equal(validateBoard({ ...valid, subtaskLimit: '10' }).subtaskLimit, undefined)
 })
 
+test('In Progress limit is optional and otherwise a positive whole number', () => {
+  assert.equal(validateBoard({ ...valid, progressLimit: '' }).progressLimit, undefined)
+  assert.equal(validateBoard({ ...valid, progressLimit: '1' }).progressLimit, undefined)
+  assert.equal(validateBoard({ ...valid, progressLimit: '999' }).progressLimit, undefined)
+  assert.ok(validateBoard({ ...valid, progressLimit: '0' }).progressLimit)
+  assert.ok(validateBoard({ ...valid, progressLimit: '1000' }).progressLimit)
+  assert.ok(validateBoard({ ...valid, progressLimit: '2.5' }).progressLimit)
+  assert.ok(validateBoard({ ...valid, progressLimit: 'many' }).progressLimit)
+})
+
 test('reports several problems at once', () => {
-  const errors = validateBoard({ name: '', emoji: '', subtaskLimit: '99' })
-  assert.deepEqual(Object.keys(errors).sort(), ['emoji', 'name', 'subtaskLimit'])
+  const errors = validateBoard({ name: '', emoji: '', subtaskLimit: '99', progressLimit: '0' })
+  assert.deepEqual(Object.keys(errors).sort(), ['emoji', 'name', 'progressLimit', 'subtaskLimit'])
 })

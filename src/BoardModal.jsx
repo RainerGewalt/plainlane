@@ -6,17 +6,27 @@ import { validateBoard, BOARD_NAME_MAX as NAME_MAX } from './validation.js'
 const ACCENTS = ['#e11d48', '#ea580c', '#f59e0b', '#16a34a', '#0d9488', '#0ea5e9', '#4f46e5', '#8b5cf6', '#db2777', '#64748b']
 const EMOJI_SUGGESTIONS = ['🗂️', '🏠', '💼', '✈️', '🚗', '💰', '🩺', '🎓', '🛠️', '🎉', '🐕', '📦']
 
-export default function BoardModal({ board, canDelete, onClose, onSave, onDelete }) {
+export default function BoardModal({ board, canDelete, onClose, onSave, onDelete, progressCount = 0 }) {
   const isEdit = Boolean(board)
   const titleId = useId()
+  const validate = (values) => {
+    const errors = validateBoard(values)
+    const requestedLimit = String(values.progressLimit ?? '').trim()
+    if (isEdit && requestedLimit && Number(requestedLimit) < progressCount) {
+      errors.progressLimit = `In Progress already contains ${progressCount} tasks. Choose at least ${progressCount}.`
+    }
+    return errors
+  }
   const form = useForm(
     {
       name: board?.name || '',
       emoji: board?.emoji || '🗂️',
       accent: board?.accent || '#4f46e5',
       subtaskLimit: String(board?.subtask_limit || 10),
+      progressLimit: board?.progress_limit == null ? '' : String(board.progress_limit),
+      showLaneAge: Boolean(board?.show_lane_age),
     },
-    validateBoard
+    validate
   )
   const { values, isValid, setValue, showError } = form
 
@@ -40,12 +50,15 @@ export default function BoardModal({ board, canDelete, onClose, onSave, onDelete
       emoji: values.emoji.trim(),
       accent: values.accent,
       subtask_limit: Number(values.subtaskLimit),
+      progress_limit: values.progressLimit.trim() ? Number(values.progressLimit) : null,
+      show_lane_age: values.showLaneAge ? 1 : 0,
     })
   }
 
   const nameError = showError('name')
   const emojiError = showError('emoji')
   const limitError = showError('subtaskLimit')
+  const progressLimitError = showError('progressLimit')
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -131,11 +144,40 @@ export default function BoardModal({ board, canDelete, onClose, onSave, onDelete
             onChange={(e) => setValue('subtaskLimit', e.target.value)}
             onBlur={() => form.markTouched('subtaskLimit')}
             aria-invalid={Boolean(limitError)}
-            aria-describedby={limitError ? 'board-limit-error' : 'board-limit-hint'}
+            aria-describedby={limitError ? 'board-subtask-limit-error' : 'board-subtask-limit-hint'}
           />
           {limitError
-            ? <span className="field-error" id="board-limit-error" role="alert">{limitError}</span>
-            : <span className="field-hint" id="board-limit-hint">Applies to every card on this board.</span>}
+            ? <span className="field-error" id="board-subtask-limit-error" role="alert">{limitError}</span>
+            : <span className="field-hint" id="board-subtask-limit-hint">Applies to every card on this board.</span>}
+        </label>
+
+        <label className="field">Max tasks in In Progress
+          <input
+            type="number"
+            min={Math.max(1, progressCount)}
+            max="999"
+            placeholder="No limit"
+            value={values.progressLimit}
+            onChange={(e) => setValue('progressLimit', e.target.value)}
+            onBlur={() => form.markTouched('progressLimit')}
+            aria-invalid={Boolean(progressLimitError)}
+            aria-describedby={progressLimitError ? 'board-progress-limit-error' : 'board-progress-limit-hint'}
+          />
+          {progressLimitError
+            ? <span className="field-error" id="board-progress-limit-error" role="alert">{progressLimitError}</span>
+            : <span className="field-hint" id="board-progress-limit-hint">Leave empty for no limit. Subtasks do not count.</span>}
+        </label>
+
+        <label className="check-field">
+          <input
+            type="checkbox"
+            checked={values.showLaneAge}
+            onChange={(e) => setValue('showLaneAge', e.target.checked)}
+          />
+          <span>
+            <strong>Show time in current column</strong>
+            <small>Displays a short age such as 3h or 5d on each task.</small>
+          </span>
         </label>
 
         <div className="modal-actions board-modal-actions">
