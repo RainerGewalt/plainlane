@@ -31,12 +31,15 @@ export const api = {
 
   // Cards on a board
   listCards: (boardId) => request('GET', `/boards/${boardId}/cards`),
+  listArchivedCards: (boardId) => request('GET', `/boards/${boardId}/cards/archive`),
   exportBoard: (boardId) => request('GET', `/boards/${boardId}/export`),
   importBoard: (boardId, cards) => request('POST', `/boards/${boardId}/import`, { cards }),
 
   // Individual cards
   create: (card) => request('POST', '/cards', card),
   update: (id, patch) => request('PUT', `/cards/${id}`, patch),
+  archiveCard: (id) => request('POST', `/cards/${id}/archive`),
+  restoreCard: (id) => request('POST', `/cards/${id}/restore`),
   remove: (id) => request('DELETE', `/cards/${id}`),
 
   // Subtasks

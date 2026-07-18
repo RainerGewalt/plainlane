@@ -1,0 +1,68 @@
+[
+  {
+    "id": "application-tailor-cv",
+    "title": "Tailor the CV",
+    "category": "important",
+    "phase": "focus",
+    "details": "Keep the job description beside the final CV and note the changes made.",
+    "contact": "",
+    "status": "done",
+    "subtasks": [
+      { "id": "application-cv-skills", "title": "Match the relevant skills", "status": "done", "ord": 0, "createdAt": 1784246400000 },
+      { "id": "application-cv-proof", "title": "Proofread the final version", "status": "done", "ord": 1, "createdAt": 1784246400001 }
+    ],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1784246400000,
+    "statusChangedAt": 1784246400001
+  },
+  {
+    "id": "application-submit",
+    "title": "Submit the application",
+    "category": "admin",
+    "phase": "focus",
+    "details": "Save the submitted documents and the confirmation email here.",
+    "contact": "Hiring team",
+    "status": "progress",
+    "subtasks": [
+      { "id": "application-submit-files", "title": "Attach the final documents", "status": "done", "ord": 0, "createdAt": 1784332800000 },
+      { "id": "application-submit-confirm", "title": "Save the submission confirmation", "status": "question", "ord": 1, "createdAt": 1784332800001 }
+    ],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1784332800000,
+    "statusChangedAt": 1784332800001
+  },
+  {
+    "id": "application-prepare-interview",
+    "title": "Prepare for the interview",
+    "category": "idea",
+    "phase": "next",
+    "details": "Collect questions, company notes, and useful source links.",
+    "contact": "",
+    "status": "todo",
+    "subtasks": [],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1784419200000,
+    "statusChangedAt": 1784419200000
+  },
+  {
+    "id": "application-save-response",
+    "title": "Save the final response",
+    "category": "waiting",
+    "phase": "later",
+    "details": "Keep the outcome and any follow-up action attached to the application.",
+    "contact": "",
+    "status": "todo",
+    "subtasks": [],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1784505600000,
+    "statusChangedAt": 1784505600000
+  }
+]

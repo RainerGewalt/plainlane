@@ -10,4 +10,6 @@ data
 server/*.db
 server/*.db-shm
 server/*.db-wal
+server/*.restore
+server/backups
 npm-debug.log*

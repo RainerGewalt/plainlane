@@ -5,6 +5,7 @@ import { SUBTASK_STATUSES, isDoneMoveAllowed } from './subtasks.js'
 import { api } from './api.js'
 import { formatLaneAge } from './laneAge.js'
 import CardModal from './CardModal.jsx'
+import CardArchiveModal from './CardArchiveModal.jsx'
 import BoardModal from './BoardModal.jsx'
 import BoardStorageModal from './BoardStorageModal.jsx'
 
@@ -23,6 +24,7 @@ export default function App() {
   const [storedBoards, setStoredBoards] = useState([])
   const [activeBoardId, setActiveBoardId] = useState(null)
   const [cards, setCards] = useState([])
+  const [archivedCards, setArchivedCards] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [openId, setOpenId] = useState(null)
@@ -31,6 +33,7 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [boardModal, setBoardModal] = useState(null) // null | { board? }
   const [storageOpen, setStorageOpen] = useState(false)
+  const [cardArchiveOpen, setCardArchiveOpen] = useState(false)
   const [aiStatus, setAiStatus] = useState({ configured: false, model: '' })
   const [dragId, setDragId] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
@@ -38,6 +41,7 @@ export default function App() {
   const [clockNow, setClockNow] = useState(Date.now())
   const [undo, setUndo] = useState(null) // null | { id, from, to, title }
   const [boardUndo, setBoardUndo] = useState(null) // null | { id, name, action }
+  const [cardArchiveUndo, setCardArchiveUndo] = useState(null) // null | { id, title }
   const fileInputRef = useRef(null)
 
   const activeBoard = boards.find((b) => b.id === activeBoardId) || null
@@ -58,6 +62,15 @@ export default function App() {
     } catch (e) {
       console.error(e)
       setError('Cards could not be loaded.')
+    }
+  }
+
+  async function loadArchivedCards(boardId) {
+    try {
+      setArchivedCards(await api.listArchivedCards(boardId))
+    } catch (e) {
+      console.error(e)
+      setError('The task archive could not be loaded.')
     }
   }
 
@@ -92,8 +105,10 @@ export default function App() {
     setFilterPhase('all')
     setQuery('')
     setOpenId(null)
+    setCardArchiveOpen(false)
     setUndo(null)
     setCards([])
+    setArchivedCards([])
     loadCards(id)
   }
 
@@ -191,6 +206,12 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [boardUndo])
 
+  useEffect(() => {
+    if (!cardArchiveUndo) return undefined
+    const timer = setTimeout(() => setCardArchiveUndo(null), 8000)
+    return () => clearTimeout(timer)
+  }, [cardArchiveUndo])
+
   // ---------- Metrics ----------
   const stats = useMemo(() => {
     const t = { todo: 0, progress: 0, done: 0 }
@@ -246,10 +267,47 @@ export default function App() {
     setCards((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)))
     api.update(id, patch).catch(onApiError)
   }
-  function deleteCard(id) {
-    setCards((cs) => cs.filter((c) => c.id !== id))
-    if (openId === id) setOpenId(null)
-    api.remove(id).then(refreshBoards).catch(onApiError)
+  async function archiveCard(id) {
+    const card = cards.find((candidate) => candidate.id === id)
+    if (!card || !activeBoardId) return
+    try {
+      await api.archiveCard(id)
+      setCards((current) => current.filter((candidate) => candidate.id !== id))
+      if (openId === id) setOpenId(null)
+      setCardArchiveUndo({ id, title: card.title })
+      await Promise.all([refreshBoards(), loadArchivedCards(activeBoardId)])
+      setError(null)
+    } catch (e) { onApiError(e) }
+  }
+
+  async function undoCardArchive() {
+    if (!cardArchiveUndo || !activeBoardId) return
+    const archived = cardArchiveUndo
+    setCardArchiveUndo(null)
+    try {
+      await api.restoreCard(archived.id)
+      await Promise.all([loadCards(activeBoardId), loadArchivedCards(activeBoardId), refreshBoards()])
+      setError(null)
+    } catch (e) { onApiError(e) }
+  }
+
+  async function restoreCard(card) {
+    if (!activeBoardId) return
+    try {
+      await api.restoreCard(card.id)
+      await Promise.all([loadCards(activeBoardId), loadArchivedCards(activeBoardId), refreshBoards()])
+      setError(null)
+    } catch (e) { onApiError(e) }
+  }
+
+  async function deleteArchivedCard(card) {
+    if (!activeBoardId) return
+    try {
+      await api.remove(card.id)
+      setArchivedCards((current) => current.filter((candidate) => candidate.id !== card.id))
+      await refreshBoards()
+      setError(null)
+    } catch (e) { onApiError(e) }
   }
   function addCard(status = 'todo', category = 'general') {
     if (!activeBoardId) return
@@ -548,6 +606,17 @@ export default function App() {
         </div>
 
         <div className="topactions">
+          <button
+            type="button"
+            className="btn ghost"
+            data-action="task-archive"
+            onClick={() => {
+              setCardArchiveOpen(true)
+              if (activeBoardId) loadArchivedCards(activeBoardId)
+            }}
+          >
+            Task archive{activeBoard?.archivedCount ? ` (${activeBoard.archivedCount})` : ''}
+          </button>
           <button type="button" className="btn ghost" onClick={exportJson}>Export</button>
           <button type="button" className="btn ghost" onClick={() => fileInputRef.current?.click()}>Import</button>
           <input type="file" accept="application/json" ref={fileInputRef} onChange={importJson} hidden />
@@ -579,6 +648,14 @@ export default function App() {
           </span>
           <button type="button" className="btn tiny" onClick={undoBoardStorage}>Undo</button>
           <button type="button" className="banner-dismiss" onClick={() => setBoardUndo(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+
+      {cardArchiveUndo && (
+        <div className="banner undo" role="status">
+          <span className="undo-text">Archived “{cardArchiveUndo.title}”.</span>
+          <button type="button" className="btn tiny" onClick={undoCardArchive}>Undo</button>
+          <button type="button" className="banner-dismiss" onClick={() => setCardArchiveUndo(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
 
@@ -670,7 +747,7 @@ export default function App() {
           card={openCard}
           onClose={() => setOpenId(null)}
           onUpdate={(patch) => updateCard(openCard.id, patch)}
-          onDelete={() => deleteCard(openCard.id)}
+          onArchive={() => archiveCard(openCard.id)}
           onAddComment={(text) => addComment(openCard.id, text)}
           onDeleteComment={(cid) => deleteComment(openCard.id, cid)}
           aiStatus={aiStatus}
@@ -706,6 +783,15 @@ export default function App() {
           onClose={() => setStorageOpen(false)}
           onRestore={restoreBoard}
           onDeletePermanently={deleteBoardPermanently}
+        />
+      )}
+
+      {cardArchiveOpen && (
+        <CardArchiveModal
+          cards={archivedCards}
+          onClose={() => setCardArchiveOpen(false)}
+          onRestore={restoreCard}
+          onDeletePermanently={deleteArchivedCard}
         />
       )}
 

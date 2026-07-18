@@ -3,9 +3,11 @@ import express from 'express'
 import Database from 'better-sqlite3'
 import { fileURLToPath } from 'url'
 import { loadEnvFile } from 'node:process'
+import fs from 'node:fs'
 import path from 'path'
 import { SEED_CARDS } from '../src/seed.js'
 import { subtasksResolved } from '../src/subtasks.js'
+import { createDatabaseBackup } from './database-maintenance.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ENV_PATH = path.join(__dirname, '..', '.env')
@@ -32,9 +34,15 @@ const DEFAULT_BOARD = {
   show_lane_age: 0,
 }
 
+const databaseAlreadyExists = fs.existsSync(DB_PATH)
 const db = new Database(DB_PATH)
 db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
+
+if (databaseAlreadyExists && process.env.PLAINLANE_AUTO_BACKUP !== '0') {
+  const backupPath = await createDatabaseBackup(DB_PATH, { label: 'startup', database: db })
+  console.log(`[db] Backup created before migrations: ${backupPath}`)
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS boards (
@@ -61,7 +69,8 @@ db.exec(`
     status    TEXT NOT NULL DEFAULT 'todo',
     ord       INTEGER NOT NULL DEFAULT 0,
     createdAt INTEGER,
-    status_changed_at INTEGER
+    status_changed_at INTEGER,
+    archived_at INTEGER DEFAULT NULL
   );
   CREATE TABLE IF NOT EXISTS subtasks (
     id        TEXT PRIMARY KEY,
@@ -117,6 +126,7 @@ db.exec(`
 const cardColumns = db.prepare('PRAGMA table_info(cards)').all().map((c) => c.name)
 if (!cardColumns.includes('board_id')) db.exec('ALTER TABLE cards ADD COLUMN board_id TEXT')
 if (!cardColumns.includes('status_changed_at')) db.exec('ALTER TABLE cards ADD COLUMN status_changed_at INTEGER')
+if (!cardColumns.includes('archived_at')) db.exec('ALTER TABLE cards ADD COLUMN archived_at INTEGER DEFAULT NULL')
 db.prepare('UPDATE cards SET status_changed_at = ? WHERE status_changed_at IS NULL').run(Date.now())
 
 const boardColumns = db.prepare('PRAGMA table_info(boards)').all().map((c) => c.name)
@@ -161,20 +171,32 @@ const stmt = {
     'UPDATE boards SET archived_at = NULL, deleted_at = NULL WHERE id = ?'
   ),
   boardCounts: db.prepare(
-    `SELECT board_id, COUNT(*) AS total,
-            SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
-            SUM(CASE WHEN status = 'progress' THEN 1 ELSE 0 END) AS progress
+    `SELECT board_id,
+            SUM(CASE WHEN archived_at IS NULL THEN 1 ELSE 0 END) AS total,
+            SUM(CASE WHEN archived_at IS NULL AND status = 'done' THEN 1 ELSE 0 END) AS done,
+            SUM(CASE WHEN archived_at IS NULL AND status = 'progress' THEN 1 ELSE 0 END) AS progress,
+            SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END) AS archived
      FROM cards GROUP BY board_id`
   ),
 
   cardsByBoard: db.prepare(
     `SELECT id, board_id, title, category, phase, details, contact, status, ord, createdAt,
-            status_changed_at AS statusChangedAt
+            status_changed_at AS statusChangedAt, archived_at AS archivedAt
+     FROM cards WHERE board_id = ? AND archived_at IS NULL ORDER BY ord ASC, createdAt ASC`
+  ),
+  allCardsByBoard: db.prepare(
+    `SELECT id, board_id, title, category, phase, details, contact, status, ord, createdAt,
+            status_changed_at AS statusChangedAt, archived_at AS archivedAt
      FROM cards WHERE board_id = ? ORDER BY ord ASC, createdAt ASC`
+  ),
+  archivedCardsByBoard: db.prepare(
+    `SELECT id, board_id, title, category, phase, details, contact, status, ord, createdAt,
+            status_changed_at AS statusChangedAt, archived_at AS archivedAt
+     FROM cards WHERE board_id = ? AND archived_at IS NOT NULL ORDER BY archived_at DESC, createdAt ASC`
   ),
   oneCard: db.prepare(
     `SELECT id, board_id, title, category, phase, details, contact, status, ord, createdAt,
-            status_changed_at AS statusChangedAt
+            status_changed_at AS statusChangedAt, archived_at AS archivedAt
      FROM cards WHERE id = ?`
   ),
   cardComments: db.prepare('SELECT id, text, ts FROM comments WHERE card_id = ? ORDER BY ts ASC'),
@@ -203,10 +225,12 @@ const stmt = {
   maxOrd: db.prepare('SELECT COALESCE(MAX(ord), -1) AS m FROM cards WHERE board_id = ?'),
   insCard: db.prepare(
     `INSERT INTO cards
-      (id, board_id, title, category, phase, details, contact, status, ord, createdAt, status_changed_at)
+      (id, board_id, title, category, phase, details, contact, status, ord, createdAt, status_changed_at, archived_at)
      VALUES
-      (@id, @board_id, @title, @category, @phase, @details, @contact, @status, @ord, @createdAt, @status_changed_at)`
+      (@id, @board_id, @title, @category, @phase, @details, @contact, @status, @ord, @createdAt, @status_changed_at, @archived_at)`
   ),
+  archiveCard: db.prepare('UPDATE cards SET archived_at = ? WHERE id = ? AND archived_at IS NULL'),
+  restoreCard: db.prepare('UPDATE cards SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL'),
   delCard: db.prepare('DELETE FROM cards WHERE id = ?'),
   delCardsByBoard: db.prepare('DELETE FROM cards WHERE board_id = ?'),
 
@@ -235,7 +259,9 @@ const stmt = {
      VALUES (@id, @card_id, @filename, @mime_type, @size, @kind, @status, @note, @data, @createdAt)`
   ),
   delDocument: db.prepare('DELETE FROM documents WHERE id = ?'),
-  progressCount: db.prepare("SELECT COUNT(*) AS n FROM cards WHERE board_id = ? AND status = 'progress'"),
+  progressCount: db.prepare(
+    "SELECT COUNT(*) AS n FROM cards WHERE board_id = ? AND status = 'progress' AND archived_at IS NULL"
+  ),
   count: db.prepare('SELECT COUNT(*) AS n FROM cards'),
 }
 
@@ -291,18 +317,28 @@ function listCards(boardId) {
   return stmt.cardsByBoard.all(boardId).map(hydrateCard)
 }
 
+function listArchivedCards(boardId) {
+  return stmt.archivedCardsByBoard.all(boardId).map(hydrateCard)
+}
+
 function boardsWithCounts(rows) {
   const counts = {}
   for (const row of stmt.boardCounts.all()) {
-    counts[row.board_id] = { total: row.total, done: row.done || 0, progress: row.progress || 0 }
+    counts[row.board_id] = {
+      total: row.total || 0,
+      done: row.done || 0,
+      progress: row.progress || 0,
+      archived: row.archived || 0,
+    }
   }
   return rows.map((board) => {
-    const c = counts[board.id] || { total: 0, done: 0, progress: 0 }
+    const c = counts[board.id] || { total: 0, done: 0, progress: 0, archived: 0 }
     return {
       ...board,
       cardCount: c.total,
       doneCount: c.done,
       progressCount: c.progress,
+      archivedCount: c.archived,
       openCount: c.total - c.done,
     }
   })
@@ -449,7 +485,7 @@ function insertDocument(cardId, payload) {
 }
 
 function exportCards(boardId) {
-  return stmt.cardsByBoard.all(boardId).map((row) => {
+  return stmt.allCardsByBoard.all(boardId).map((row) => {
     const card = hydrateCard(row)
     card.documents = stmt.cardDocumentsFull.all(row.id).map((document) => ({
       ...documentMetadata(document),
@@ -477,6 +513,7 @@ const importIntoBoard = db.transaction((boardId, cards) => {
       ord: Number.isFinite(card.ord) ? card.ord : index,
       createdAt: card.createdAt || Date.now(),
       status_changed_at: card.statusChangedAt || card.createdAt || Date.now(),
+      archived_at: card.archivedAt || null,
     })
     ;(card.comments || []).forEach((comment) =>
       stmt.insComment.run({
@@ -766,6 +803,11 @@ app.get('/api/boards/:id/cards', (req, res) => {
   res.json(listCards(req.params.id))
 })
 
+app.get('/api/boards/:id/cards/archive', (req, res) => {
+  if (!stmt.oneActiveBoard.get(req.params.id)) return res.status(404).json({ error: 'Active board not found.' })
+  res.json(listArchivedCards(req.params.id))
+})
+
 app.get('/api/boards/:id/export', (req, res) => {
   if (!stmt.oneBoard.get(req.params.id)) return res.status(404).json({ error: 'Board not found.' })
   res.json(exportCards(req.params.id))
@@ -776,7 +818,7 @@ app.post('/api/boards/:id/import', (req, res) => {
   if (!board) return res.status(404).json({ error: 'Board not found.' })
   const cards = req.body?.cards
   if (!Array.isArray(cards)) return res.status(400).json({ error: 'Expected { cards: [...] }.' })
-  const progressCount = cards.filter((card) => (card.status || 'todo') === 'progress').length
+  const progressCount = cards.filter((card) => !card.archivedAt && (card.status || 'todo') === 'progress').length
   if (board.progress_limit !== null && progressCount > board.progress_limit) {
     return res.status(409).json({
       error: `Import contains ${progressCount} In Progress tasks, exceeding this board's limit (${board.progress_limit}).`,
@@ -811,6 +853,7 @@ app.post('/api/cards', (req, res) => {
     ord: stmt.maxOrd.get(boardId).m + 1,
     createdAt,
     status_changed_at: createdAt,
+    archived_at: null,
   }
   stmt.insCard.run(card)
   res.status(201).json(hydrateCard(stmt.oneCard.get(id)))
@@ -819,6 +862,9 @@ app.post('/api/cards', (req, res) => {
 app.put('/api/cards/:id', (req, res) => {
   const existing = stmt.oneCard.get(req.params.id)
   if (!existing) return res.status(404).json({ error: 'Task not found.' })
+  if (existing.archivedAt !== null) {
+    return res.status(409).json({ error: 'Restore this task before editing it.' })
+  }
   const body = req.body || {}
   const nextBoardId = 'board_id' in body ? String(body.board_id) : existing.board_id
   const nextStatus = 'status' in body ? String(body.status) : existing.status
@@ -854,7 +900,36 @@ app.put('/api/cards/:id', (req, res) => {
   }
 })
 
+app.post('/api/cards/:id/archive', (req, res) => {
+  const card = stmt.oneCard.get(req.params.id)
+  if (!card) return res.status(404).json({ error: 'Task not found.' })
+  if (card.archivedAt !== null) return res.status(409).json({ error: 'Task is already archived.' })
+  stmt.archiveCard.run(Date.now(), req.params.id)
+  res.json(hydrateCard(stmt.oneCard.get(req.params.id)))
+})
+
+app.post('/api/cards/:id/restore', (req, res) => {
+  const card = stmt.oneCard.get(req.params.id)
+  if (!card) return res.status(404).json({ error: 'Task not found.' })
+  if (card.archivedAt === null) return res.status(409).json({ error: 'Task is already active.' })
+  if (!stmt.oneActiveBoard.get(card.board_id)) {
+    return res.status(409).json({ error: 'Restore the board before restoring this task.' })
+  }
+  try {
+    if (card.status === 'progress') ensureProgressCapacity(card.board_id)
+    stmt.restoreCard.run(req.params.id)
+    res.json(hydrateCard(stmt.oneCard.get(req.params.id)))
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message })
+  }
+})
+
 app.delete('/api/cards/:id', (req, res) => {
+  const card = stmt.oneCard.get(req.params.id)
+  if (!card) return res.status(404).json({ error: 'Task not found.' })
+  if (card.archivedAt === null) {
+    return res.status(409).json({ error: 'Archive this task before deleting it permanently.' })
+  }
   stmt.delCard.run(req.params.id)
   res.status(204).end()
 })

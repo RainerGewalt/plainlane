@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "The simple self-hosted board for tasks with files",
+  "description": "Simple task management for everyday projects, with every step, file, note, and email together",
   "scripts": {
     "dev": "concurrently -k -n server,client -c yellow,cyan \"npm:server\" \"npm:client\"",
     "server": "node server/index.js",

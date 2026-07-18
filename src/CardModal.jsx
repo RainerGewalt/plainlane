@@ -214,7 +214,7 @@ export default function CardModal({
   card,
   onClose,
   onUpdate,
-  onDelete,
+  onArchive,
   onAddComment,
   onDeleteComment,
   aiStatus,
@@ -394,7 +394,7 @@ export default function CardModal({
             )}
             <div className="modal-actions">
               <button type="button" className="btn" onClick={() => setEdit(true)}>Edit</button>
-              <button type="button" className="btn danger" onClick={() => { if (confirm('Delete this task?')) onDelete() }}>Delete</button>
+              <button type="button" className="btn ghost" onClick={onArchive}>Archive task</button>
             </div>
           </>
         ) : (
@@ -619,7 +619,11 @@ export default function CardModal({
                 <div className="comment-body">{message.text}</div>
                 <div className="comment-meta">
                   <span>{fmt(message.ts)}</span>
-                  <button type="button" onClick={() => onDeleteComment(message.id)} aria-label="Delete comment">✕</button>
+                  <button
+                    type="button"
+                    onClick={() => { if (confirm('Permanently delete this note?')) onDeleteComment(message.id) }}
+                    aria-label="Delete note"
+                  >✕</button>
                 </div>
               </div>
             ))}

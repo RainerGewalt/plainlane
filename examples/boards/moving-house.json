@@ -1,0 +1,107 @@
+[
+  {
+    "id": "moving-rental-agreement",
+    "title": "Sign the rental agreement",
+    "category": "admin",
+    "phase": "focus",
+    "details": "Keep the signed agreement, questions, and confirmation together.",
+    "contact": "Property manager",
+    "status": "done",
+    "subtasks": [
+      { "id": "moving-rental-read", "title": "Review the agreement", "status": "done", "ord": 0, "createdAt": 1784246400000 },
+      { "id": "moving-rental-sign", "title": "Sign both copies", "status": "done", "ord": 1, "createdAt": 1784246400001 },
+      { "id": "moving-rental-save", "title": "Save the confirmed copy", "status": "done", "ord": 2, "createdAt": 1784246400002 }
+    ],
+    "comments": [
+      { "id": "moving-rental-note", "text": "The returned copy was received and stored on this card.", "ts": 1784246400003 }
+    ],
+    "documents": [
+      {
+        "id": "moving-rental-file",
+        "filename": "fictional-rental-agreement.txt",
+        "kind": "contract",
+        "status": "confirmed",
+        "note": "Fictional file included only to demonstrate portable imports.",
+        "dataBase64": "RmljdGlvbmFsIGV4YW1wbGUgYWdyZWVtZW50LiBObyBwZXJzb25hbCBkYXRhLg==",
+        "createdAt": 1784246400004
+      }
+    ],
+    "researchRuns": [],
+    "createdAt": 1784246400000,
+    "statusChangedAt": 1784246400004
+  },
+  {
+    "id": "moving-register-address",
+    "title": "Register the new address",
+    "category": "important",
+    "phase": "focus",
+    "details": "Track the submitted form, supporting documents, and written response.",
+    "contact": "Local administration",
+    "status": "progress",
+    "subtasks": [
+      { "id": "moving-register-form", "title": "Complete the registration form", "status": "done", "ord": 0, "createdAt": 1784332800000 },
+      { "id": "moving-register-proof", "title": "Collect proof of address", "status": "done", "ord": 1, "createdAt": 1784332800001 },
+      { "id": "moving-register-reply", "title": "Wait for written confirmation", "status": "question", "ord": 2, "createdAt": 1784332800002 }
+    ],
+    "comments": [],
+    "documents": [
+      {
+        "id": "moving-register-email",
+        "filename": "fictional-confirmation.eml",
+        "kind": "email",
+        "status": "sent",
+        "note": "Fictional saved email.",
+        "dataBase64": "RnJvbTogZGVtb0BleGFtcGxlLmludmFsaWQKVG86IGRlbW9AZXhhbXBsZS5pbnZhbGlkClN1YmplY3Q6IEV4YW1wbGUgY29uZmlybWF0aW9uCgpUaGlzIGlzIGZpY3Rpb25hbCBzYW1wbGUgY29udGVudC4=",
+        "createdAt": 1784332800003
+      }
+    ],
+    "researchRuns": [],
+    "createdAt": 1784332800000,
+    "statusChangedAt": 1784332800003
+  },
+  {
+    "id": "moving-customs-documents",
+    "title": "Prepare moving documents",
+    "category": "admin",
+    "phase": "next",
+    "details": "List every required document and keep the final copies on this card.",
+    "contact": "",
+    "status": "todo",
+    "subtasks": [],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1784419200000,
+    "statusChangedAt": 1784419200000
+  },
+  {
+    "id": "moving-internet",
+    "title": "Organize internet service",
+    "category": "finance",
+    "phase": "next",
+    "details": "Compare offers, save the chosen order, and track activation.",
+    "contact": "",
+    "status": "todo",
+    "subtasks": [],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1784505600000,
+    "statusChangedAt": 1784505600000
+  },
+  {
+    "id": "moving-handover",
+    "title": "Complete the apartment handover",
+    "category": "general",
+    "phase": "later",
+    "details": "Keep the handover notes, meter readings, and photos together.",
+    "contact": "",
+    "status": "todo",
+    "subtasks": [],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1784592000000,
+    "statusChangedAt": 1784592000000
+  }
+]

@@ -12,6 +12,8 @@ compose.private.yml
 server/*.db
 server/*.db-shm
 server/*.db-wal
+server/*.restore
+server/backups/
 
 # Optional bind-mounted Docker data directory
 data/*

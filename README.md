@@ -2,9 +2,11 @@
   <img src="docs/plainlane-mark.svg" width="720" alt="Plainlane — tasks, files, and next steps together" />
 </p>
 
-<p align="center"><strong>The simple self-hosted board for tasks with files.</strong></p>
+<p align="center"><strong>Simple task management for everyday projects.</strong></p>
 
-**Keep every task, file, note, and next step together.** Plainlane gives you three lanes—**To Do**, **In Progress**, and **Done**—plus the context needed to finish real-life work. Steps, comments, saved emails, documents, and optional web research stay attached to the card in one mounted SQLite database.
+Organize moves, applications, paperwork, purchases, and home projects. **Keep every task, step, file, note, and email together.**
+
+Plainlane is a small self-hosted task board with three lanes—**To Do**, **In Progress**, and **Done**. Steps, comments, saved emails, documents, and optional web research stay attached to the task in one SQLite database.
 
 **Three lanes. One command. No project-management overhead.**
 
@@ -28,7 +30,7 @@ cd plainlane
 ./start.sh
 ```
 
-Open [http://localhost:8080](http://localhost:8080). The start script also prints a LAN address for your phone or another computer.
+Open [http://localhost:8080](http://localhost:8080). Plainlane is reachable only from this computer by default.
 
 <p align="center">
   <img src="docs/plainlane-board.png" width="1000" alt="Plainlane board with To Do, In Progress, and Done lanes" />
@@ -36,31 +38,59 @@ Open [http://localhost:8080](http://localhost:8080). The start script also print
 
 ## What you get
 
-- Browser-managed boards and cards
+- Boards and tasks you manage in your browser
+- A searchable task archive with restore and undo
 - Reversible board archive and trash, with permanent deletion kept in trash
 - Drag and drop plus keyboard-accessible move buttons
 - Inline card expansion for details and subtasks
 - Move undo and a guard against completing cards with open subtasks
 - Optional time-in-column hints on cards
 - An optional per-board limit for main tasks in **In Progress**
-- Search and lightweight category/phase filters
+- Search, groups, and lightweight filters
 - Comments and notes on every card
 - PDF, email, image, Office, and text attachments up to 15 MB
 - A status and note for every attachment
-- Full board import/export, including file contents
+- Complete board import/export, including attached files
 - Optional OpenAI web research with saved source links
 - NGINX for desktop, tablet, and phone access
 - One mounted SQLite database—no external database service
 
 Plainlane deliberately stops there. It has no accounts, roles, due dates, notifications, mailbox sync, or automation engine.
 
-## Safe board housekeeping
+## Keep completed work without clutter
 
-Archive boards you want out of the board bar, or move them to trash with an immediate **Undo** option. Both states keep cards and files intact. Restore them from **Board storage** at any time; permanent deletion is available only for boards already in trash.
+Archive a task from its card and restore it from the searchable **Task archive**. Its steps, notes, files, emails, and research remain intact. Archive boards you want out of the board bar, or move them to trash with an immediate **Undo** option. Permanent deletion is available only from an archive or trash and always asks for confirmation.
+
+<p align="center">
+  <img src="docs/plainlane-task-archive.png" width="1000" alt="Searchable Plainlane task archive with restore and permanent delete controls" />
+</p>
 
 <p align="center">
   <img src="docs/plainlane-board-storage.png" width="1000" alt="Plainlane Board storage with archived boards, trash, and restore controls" />
 </p>
+
+## Try a complete example
+
+Create a fresh board, choose **Import**, and select one of these fictional examples:
+
+- [Moving house](examples/boards/moving-house.json)
+- [Job application](examples/boards/job-application.json)
+
+The moving example includes steps, a note, a saved email, and sample file statuses. Import replaces the cards on the selected board only after an explicit confirmation.
+
+## Backup, restore, and update
+
+Plainlane creates a consistent SQLite backup before startup migrations and keeps the latest ten files in `/data/backups`.
+
+```bash
+./start.sh backup          # create a backup now
+./start.sh backups         # list available backups
+./start.sh restore         # restore the newest backup after confirmation
+./start.sh restore FILE    # restore a specific listed backup
+./start.sh update          # backup, fast-forward, rebuild, and restart
+```
+
+Every restore creates another safety backup first. The database file is replaced only after the selected backup has been copied successfully. For unattended restore testing, set `PLAINLANE_CONFIRM_RESTORE=1`; interactive confirmation is the normal default.
 
 ## Optional AI research
 
@@ -76,11 +106,11 @@ AI usage may cost money. Verify important information at the linked original sou
 
 ## Data and access
 
-The complete state lives in `/data/plainlane.db` inside the Docker volume. Use **Export** in the browser for a portable board backup. Exports include attachment contents, so treat them as sensitive files.
+The complete state lives in `/data/plainlane.db` inside the Docker volume. Use **Export** in the browser for a complete board backup you can move elsewhere. Exports include attached files, so treat them as sensitive.
 
-Each card also exposes `statusChangedAt` through the local API and JSON export. Plainlane updates this timestamp only when the main card changes lane; it powers the optional time-in-column hint. Board responses expose `progress_limit` (`null` means unlimited) and `show_lane_age` (`0` or `1`) for the corresponding board options. Archived and trashed boards are stored through the additive `archived_at` and `deleted_at` fields and remain in the same database until explicitly deleted from trash.
+Each task also exposes `statusChangedAt` through the local API and JSON export. Plainlane updates this timestamp only when the main task changes lane; it powers the optional time-in-column hint. Board responses expose `progress_limit` (`null` means unlimited) and `show_lane_age` (`0` or `1`) for the corresponding board options. Tasks use the additive `archived_at` field. Archived and trashed boards use `archived_at` and `deleted_at`; all remain in the same database until explicitly deleted.
 
-Plainlane has **no login screen**. Anyone who can reach its port can use the app and access its files. Keep it on a trusted network, bind it to localhost, or place it behind an authenticated reverse proxy. Do not expose port 8080 directly to the internet.
+Plainlane has **no login screen**. The default `127.0.0.1` binding therefore exposes it only to the computer running Docker. To use it on a trusted home network, deliberately set `PLAINLANE_BIND_ADDRESS=0.0.0.0`. Do not expose Plainlane directly to the internet; use a VPN or authenticated reverse proxy instead.
 
 See [SECURITY.md](SECURITY.md) for the deployment model.
 
@@ -91,6 +121,8 @@ See [SECURITY.md](SECURITY.md) for the deployment model.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PLAINLANE_PORT` | `8080` | NGINX browser port |
+| `PLAINLANE_BIND_ADDRESS` | `127.0.0.1` | Browser bind address; use `0.0.0.0` only for a trusted LAN |
+| `PLAINLANE_AUTO_BACKUP` | `1` | Creates a rolling backup before startup migrations |
 | `OPENAI_API_KEY` | empty | Enables optional research |
 | `OPENAI_MODEL` | `gpt-5.6` | Research model |
 
@@ -107,6 +139,10 @@ docker compose -f compose.yml -f examples/compose.bind-mount.yml up --build -d
 ./start.sh status
 ./start.sh logs
 ./start.sh restart
+./start.sh backup
+./start.sh backups
+./start.sh restore
+./start.sh update
 ./start.sh stop
 ```
 

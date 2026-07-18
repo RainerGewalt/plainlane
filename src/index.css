@@ -627,6 +627,29 @@ a { color: var(--action); text-underline-offset: 2px; }
   color: var(--muted); font-size: 12px;
 }
 
+/* ---------- Task archive ---------- */
+.card-archive-modal { max-width: 820px; }
+.archive-search { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.archive-search input {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--panel-2); color: var(--text); font: inherit;
+}
+.archive-search input:focus-visible { outline: 3px solid color-mix(in srgb, var(--focus) 28%, transparent); border-color: var(--focus); }
+.archive-result-head { display: flex; align-items: baseline; gap: 6px; margin: 15px 0 8px; font-size: 12px; }
+.archive-result-head span { color: var(--muted); }
+.archived-card-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.archived-card-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px;
+  padding: 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2);
+}
+.archived-card-status { width: 9px; height: 38px; border-radius: 999px; background: var(--muted); }
+.archived-card-status.status-progress { background: var(--action); }
+.archived-card-status.status-done { background: #16a34a; }
+.archived-card-copy { display: flex; flex-direction: column; min-width: 0; }
+.archived-card-copy strong { overflow: hidden; color: var(--text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.archived-card-copy small, .archived-card-copy > span { margin-top: 2px; color: var(--muted); font-size: 11px; }
+.archived-card-actions { display: flex; justify-content: flex-end; gap: 7px; }
+
 @media (max-width: 560px) {
   .topbar, .boardbar, .filters { padding-left: 16px; padding-right: 16px; }
   .dashboard { padding-left: 16px; padding-right: 16px; }
@@ -639,6 +662,8 @@ a { color: var(--action); text-underline-offset: 2px; }
   .board-storage::before { content: "▣"; }
   .stored-board-row { grid-template-columns: auto minmax(0, 1fr); }
   .stored-board-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .archived-card-row { grid-template-columns: auto minmax(0, 1fr); }
+  .archived-card-actions { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; }
 }
 
 @media (prefers-reduced-motion: reduce) {
