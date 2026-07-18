@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CATEGORIES, PHASES } from './seed.js'
+import { groupByCategory } from './grouping.js'
 import { api } from './api.js'
 import CardModal from './CardModal.jsx'
 import BoardModal from './BoardModal.jsx'
@@ -28,6 +29,7 @@ export default function App() {
   const [aiStatus, setAiStatus] = useState({ configured: false, model: '' })
   const [dragId, setDragId] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
+  const [collapsed, setCollapsed] = useState(() => new Set())
   const fileInputRef = useRef(null)
 
   const activeBoard = boards.find((b) => b.id === activeBoardId) || null
@@ -116,6 +118,36 @@ export default function App() {
     })
   }, [cards, filterCat, filterPhase, query])
 
+  // ---------- Group tasks by category for the collapsible in-column sections ----------
+  const categoryGroups = useMemo(
+    () => groupByCategory(filtered, Object.keys(CATEGORIES)),
+    [filtered]
+  )
+
+  // Load the per-board collapsed set whenever the active board changes.
+  useEffect(() => {
+    if (!activeBoardId) return
+    try {
+      const raw = localStorage.getItem(`plainlane-collapsed-${activeBoardId}`)
+      setCollapsed(new Set(raw ? JSON.parse(raw) : []))
+    } catch { setCollapsed(new Set()) }
+  }, [activeBoardId])
+
+  // Collapse is tracked per column + category, so a category can stay open in one
+  // lane while being folded away in another.
+  function toggleGroup(colId, key) {
+    const token = `${colId}::${key}`
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(token)) next.delete(token)
+      else next.add(token)
+      if (activeBoardId) {
+        try { localStorage.setItem(`plainlane-collapsed-${activeBoardId}`, JSON.stringify([...next])) } catch {}
+      }
+      return next
+    })
+  }
+
   // ---------- Metrics ----------
   const stats = useMemo(() => {
     const t = { todo: 0, progress: 0, done: 0 }
@@ -140,13 +172,13 @@ export default function App() {
     if (openId === id) setOpenId(null)
     api.remove(id).then(refreshBoards).catch(onApiError)
   }
-  function addCard(status = 'todo') {
+  function addCard(status = 'todo', category = 'general') {
     if (!activeBoardId) return
     const nc = {
       id: uid(),
       board_id: activeBoardId,
       title: 'New task',
-      category: 'general',
+      category,
       phase: '',
       details: '',
       contact: '',
@@ -445,39 +477,24 @@ export default function App() {
         <div className="loading" role="status" aria-live="polite">Loading board …</div>
       ) : (
         <main className="board" id="main-board" aria-label={activeBoard ? `${activeBoard.name} Kanban board` : 'Kanban board'}>
-          {COLUMNS.map((col) => {
-            const colCards = filtered.filter((c) => c.status === col.id)
-            const headingId = `column-${col.id}`
-            return (
-              <section
-                key={col.id}
-                className={`column ${dragOverCol === col.id ? 'dragover' : ''}`}
-                aria-labelledby={headingId}
-                onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.id) }}
-                onDragLeave={() => setDragOverCol((v) => (v === col.id ? null : v))}
-                onDrop={() => onDrop(col.id)}
-              >
-                <div className="column-head">
-                  <h2 id={headingId}>{col.title}</h2>
-                  <span className="count" aria-label={`${colCards.length} ${colCards.length === 1 ? 'task' : 'tasks'}`}>{colCards.length}</span>
-                </div>
-                <div className="column-body">
-                  {colCards.map((card) => (
-                    <CardTile
-                      key={card.id}
-                      card={card}
-                      onOpen={() => setOpenId(card.id)}
-                      onDragStart={() => setDragId(card.id)}
-                      onDragEnd={() => { setDragId(null); setDragOverCol(null) }}
-                      onMove={(status) => moveCard(card.id, status)}
-                    />
-                  ))}
-                  {colCards.length === 0 && <div className="empty">No tasks here</div>}
-                </div>
-                <button type="button" className="addcard" onClick={() => addCard(col.id)}>+ Add task</button>
-              </section>
-            )
-          })}
+          {COLUMNS.map((col) => (
+            <BoardColumn
+              key={col.id}
+              col={col}
+              groups={categoryGroups}
+              collapsed={collapsed}
+              onToggle={(key) => toggleGroup(col.id, key)}
+              dragOver={dragOverCol === col.id}
+              onDragOver={() => setDragOverCol(col.id)}
+              onDragLeave={() => setDragOverCol((v) => (v === col.id ? null : v))}
+              onDrop={() => onDrop(col.id)}
+              onOpen={setOpenId}
+              onDragStart={setDragId}
+              onDragEnd={() => { setDragId(null); setDragOverCol(null) }}
+              onMove={moveCard}
+              onAddCard={() => addCard(col.id)}
+            />
+          ))}
         </main>
       )}
 
@@ -522,6 +539,72 @@ function StatTile({ label, value, sub, tone = 'muted' }) {
       <span className="stat-label">{label}</span>
       <span className="stat-value">{value}{sub && <em className="stat-sub">{sub}</em>}</span>
     </div>
+  )
+}
+
+function BoardColumn({ col, groups, collapsed, onToggle, dragOver, onDragOver, onDragLeave, onDrop, onOpen, onDragStart, onDragEnd, onMove, onAddCard }) {
+  const headingId = `column-${col.id}`
+  // Cards grouped by category, keeping only categories that have a card in this lane.
+  const lanes = groups
+    .map((group) => ({ group, cards: group.cards.filter((c) => c.status === col.id) }))
+    .filter((lane) => lane.cards.length > 0)
+  const total = lanes.reduce((sum, lane) => sum + lane.cards.length, 0)
+
+  return (
+    <section
+      className={`column ${dragOver ? 'dragover' : ''}`}
+      aria-labelledby={headingId}
+      onDragOver={(e) => { e.preventDefault(); onDragOver() }}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      <div className="column-head">
+        <h2 id={headingId}>{col.title}</h2>
+        <span className="count" aria-label={`${total} ${total === 1 ? 'task' : 'tasks'}`}>{total}</span>
+      </div>
+      <div className="column-body">
+        {lanes.map(({ group, cards }) => {
+          const key = group.key
+          const label = key === '__none' ? 'Uncategorized' : (CATEGORIES[key]?.label || key)
+          const color = CATEGORIES[key]?.color || '#888'
+          const isCollapsed = collapsed.has(`${col.id}::${key}`)
+          const panelId = `group-${col.id}-${key}`
+          return (
+            <div key={key} className={`cat-group ${isCollapsed ? 'collapsed' : ''}`} style={{ '--cat': color }}>
+              <button
+                type="button"
+                className="cat-group-head"
+                onClick={() => onToggle(key)}
+                aria-expanded={!isCollapsed}
+                aria-controls={panelId}
+                aria-label={`${label}, ${cards.length} ${cards.length === 1 ? 'task' : 'tasks'}, ${col.title}`}
+              >
+                <span className="cat-caret" aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span>
+                <span className="cat-dot" aria-hidden="true" />
+                <span className="cat-name">{label}</span>
+                <span className="cat-count" aria-hidden="true">{cards.length}</span>
+              </button>
+              {!isCollapsed && (
+                <div className="cat-cards" id={panelId}>
+                  {cards.map((card) => (
+                    <CardTile
+                      key={card.id}
+                      card={card}
+                      onOpen={() => onOpen(card.id)}
+                      onDragStart={() => onDragStart(card.id)}
+                      onDragEnd={onDragEnd}
+                      onMove={(status) => onMove(card.id, status)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {total === 0 && <div className="empty">No tasks here</div>}
+      </div>
+      <button type="button" className="addcard" onClick={onAddCard}>+ Add task</button>
+    </section>
   )
 }
 
