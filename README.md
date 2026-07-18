@@ -35,12 +35,14 @@ Open [http://localhost:8080](http://localhost:8080). The start script also print
 ## What you get
 
 - Browser-managed boards and cards
+- Subtasks with per-step statuses, progress indicators, and a configurable per-board limit (1–10); the card's lane remains its overall status
 - Drag and drop plus keyboard-accessible move buttons
 - Search and lightweight category/phase filters
 - Comments and notes on every card
 - PDF, email, image, Office, and text attachments up to 15 MB
 - A status and note for every attachment
-- Full board import/export, including file contents
+- At-a-glance board and card progress with counts, badges, and progress bars
+- Full board import/export, including subtasks and file contents
 - Optional OpenAI web research with saved source links
 - NGINX for desktop, tablet, and phone access
 - One mounted SQLite database—no external database service
