@@ -47,7 +47,9 @@ db.exec(`
     createdAt INTEGER NOT NULL,
     subtask_limit INTEGER NOT NULL DEFAULT 10,
     progress_limit INTEGER DEFAULT NULL,
-    show_lane_age INTEGER NOT NULL DEFAULT 0
+    show_lane_age INTEGER NOT NULL DEFAULT 0,
+    archived_at INTEGER DEFAULT NULL,
+    deleted_at INTEGER DEFAULT NULL
   );
   CREATE TABLE IF NOT EXISTS cards (
     id        TEXT PRIMARY KEY,
@@ -121,11 +123,23 @@ const boardColumns = db.prepare('PRAGMA table_info(boards)').all().map((c) => c.
 if (!boardColumns.includes('subtask_limit')) db.exec('ALTER TABLE boards ADD COLUMN subtask_limit INTEGER NOT NULL DEFAULT 10')
 if (!boardColumns.includes('progress_limit')) db.exec('ALTER TABLE boards ADD COLUMN progress_limit INTEGER DEFAULT NULL')
 if (!boardColumns.includes('show_lane_age')) db.exec('ALTER TABLE boards ADD COLUMN show_lane_age INTEGER NOT NULL DEFAULT 0')
+if (!boardColumns.includes('archived_at')) db.exec('ALTER TABLE boards ADD COLUMN archived_at INTEGER DEFAULT NULL')
+if (!boardColumns.includes('deleted_at')) db.exec('ALTER TABLE boards ADD COLUMN deleted_at INTEGER DEFAULT NULL')
 
 // ---------- Prepared statements ----------
 const stmt = {
   allBoards: db.prepare('SELECT * FROM boards ORDER BY ord ASC, createdAt ASC'),
+  activeBoards: db.prepare(
+    'SELECT * FROM boards WHERE archived_at IS NULL AND deleted_at IS NULL ORDER BY ord ASC, createdAt ASC'
+  ),
+  storedBoards: db.prepare(
+    `SELECT * FROM boards WHERE archived_at IS NOT NULL OR deleted_at IS NOT NULL
+     ORDER BY COALESCE(deleted_at, archived_at) DESC, createdAt ASC`
+  ),
   oneBoard: db.prepare('SELECT * FROM boards WHERE id = ?'),
+  oneActiveBoard: db.prepare(
+    'SELECT * FROM boards WHERE id = ? AND archived_at IS NULL AND deleted_at IS NULL'
+  ),
   insBoard: db.prepare(
     `INSERT INTO boards
       (id, name, emoji, accent, kind, ord, createdAt, subtask_limit, progress_limit, show_lane_age)
@@ -134,7 +148,18 @@ const stmt = {
   ),
   delBoard: db.prepare('DELETE FROM boards WHERE id = ?'),
   maxBoardOrd: db.prepare('SELECT COALESCE(MAX(ord), -1) AS m FROM boards'),
-  countBoards: db.prepare('SELECT COUNT(*) AS n FROM boards'),
+  countActiveBoards: db.prepare(
+    'SELECT COUNT(*) AS n FROM boards WHERE archived_at IS NULL AND deleted_at IS NULL'
+  ),
+  archiveBoard: db.prepare(
+    'UPDATE boards SET archived_at = ?, deleted_at = NULL WHERE id = ?'
+  ),
+  trashBoard: db.prepare(
+    'UPDATE boards SET deleted_at = ?, archived_at = NULL WHERE id = ?'
+  ),
+  restoreBoard: db.prepare(
+    'UPDATE boards SET archived_at = NULL, deleted_at = NULL WHERE id = ?'
+  ),
   boardCounts: db.prepare(
     `SELECT board_id, COUNT(*) AS total,
             SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
@@ -223,8 +248,13 @@ function ensureDefaultBoard() {
 }
 
 function ensureInitialBoard() {
-  const existingBoard = stmt.allBoards.all()[0]
+  const existingBoard = stmt.activeBoards.all()[0]
   if (existingBoard) return existingBoard
+  const storedBoard = stmt.allBoards.all()[0]
+  if (storedBoard) {
+    stmt.restoreBoard.run(storedBoard.id)
+    return stmt.oneBoard.get(storedBoard.id)
+  }
   ensureDefaultBoard()
   return stmt.oneBoard.get(DEFAULT_BOARD.id)
 }
@@ -261,12 +291,12 @@ function listCards(boardId) {
   return stmt.cardsByBoard.all(boardId).map(hydrateCard)
 }
 
-function listBoards() {
+function boardsWithCounts(rows) {
   const counts = {}
   for (const row of stmt.boardCounts.all()) {
     counts[row.board_id] = { total: row.total, done: row.done || 0, progress: row.progress || 0 }
   }
-  return stmt.allBoards.all().map((board) => {
+  return rows.map((board) => {
     const c = counts[board.id] || { total: 0, done: 0, progress: 0 }
     return {
       ...board,
@@ -276,6 +306,14 @@ function listBoards() {
       openCount: c.total - c.done,
     }
   })
+}
+
+function listBoards() {
+  return boardsWithCounts(stmt.activeBoards.all())
+}
+
+function listStoredBoards() {
+  return boardsWithCounts(stmt.storedBoards.all())
 }
 
 function parseProgressLimit(value) {
@@ -618,6 +656,7 @@ app.get('/api/ai/status', (_req, res) => {
 
 // ----- Boards -----
 app.get('/api/boards', (_req, res) => res.json(listBoards()))
+app.get('/api/boards/storage', (_req, res) => res.json(listStoredBoards()))
 
 app.post('/api/boards', (req, res) => {
   const body = req.body || {}
@@ -648,7 +687,7 @@ app.post('/api/boards', (req, res) => {
 })
 
 app.put('/api/boards/:id', (req, res) => {
-  const board = stmt.oneBoard.get(req.params.id)
+  const board = stmt.oneActiveBoard.get(req.params.id)
   if (!board) return res.status(404).json({ error: 'Board not found.' })
   const body = req.body || {}
   const allowed = ['name', 'emoji', 'accent', 'ord', 'subtask_limit', 'progress_limit', 'show_lane_age']
@@ -678,9 +717,41 @@ app.put('/api/boards/:id', (req, res) => {
   }
 })
 
+app.post('/api/boards/:id/archive', (req, res) => {
+  const board = stmt.oneActiveBoard.get(req.params.id)
+  if (!board) return res.status(404).json({ error: 'Active board not found.' })
+  if (stmt.countActiveBoards.get().n <= 1) {
+    return res.status(409).json({ error: 'The last active board cannot be archived.' })
+  }
+  stmt.archiveBoard.run(Date.now(), req.params.id)
+  res.json(stmt.oneBoard.get(req.params.id))
+})
+
+app.post('/api/boards/:id/trash', (req, res) => {
+  const board = stmt.oneActiveBoard.get(req.params.id)
+  if (!board) return res.status(404).json({ error: 'Active board not found.' })
+  if (stmt.countActiveBoards.get().n <= 1) {
+    return res.status(409).json({ error: 'The last active board cannot be moved to trash.' })
+  }
+  stmt.trashBoard.run(Date.now(), req.params.id)
+  res.json(stmt.oneBoard.get(req.params.id))
+})
+
+app.post('/api/boards/:id/restore', (req, res) => {
+  const board = stmt.oneBoard.get(req.params.id)
+  if (!board) return res.status(404).json({ error: 'Board not found.' })
+  if (board.archived_at === null && board.deleted_at === null) {
+    return res.status(409).json({ error: 'Board is already active.' })
+  }
+  stmt.restoreBoard.run(req.params.id)
+  res.json(boardsWithCounts([stmt.oneBoard.get(req.params.id)])[0])
+})
+
 app.delete('/api/boards/:id', (req, res) => {
-  if (stmt.countBoards.get().n <= 1) {
-    return res.status(409).json({ error: 'The last board cannot be deleted.' })
+  const board = stmt.oneBoard.get(req.params.id)
+  if (!board) return res.status(404).json({ error: 'Board not found.' })
+  if (board.deleted_at === null) {
+    return res.status(409).json({ error: 'Only boards in trash can be deleted permanently.' })
   }
   const remove = db.transaction((id) => {
     stmt.delCardsByBoard.run(id)
@@ -691,7 +762,7 @@ app.delete('/api/boards/:id', (req, res) => {
 })
 
 app.get('/api/boards/:id/cards', (req, res) => {
-  if (!stmt.oneBoard.get(req.params.id)) return res.status(404).json({ error: 'Board not found.' })
+  if (!stmt.oneActiveBoard.get(req.params.id)) return res.status(404).json({ error: 'Active board not found.' })
   res.json(listCards(req.params.id))
 })
 
@@ -701,7 +772,7 @@ app.get('/api/boards/:id/export', (req, res) => {
 })
 
 app.post('/api/boards/:id/import', (req, res) => {
-  const board = stmt.oneBoard.get(req.params.id)
+  const board = stmt.oneActiveBoard.get(req.params.id)
   if (!board) return res.status(404).json({ error: 'Board not found.' })
   const cards = req.body?.cards
   if (!Array.isArray(cards)) return res.status(400).json({ error: 'Expected { cards: [...] }.' })
@@ -719,7 +790,7 @@ app.post('/api/boards/:id/import', (req, res) => {
 app.post('/api/cards', (req, res) => {
   const body = req.body || {}
   const boardId = String(body.board_id || DEFAULT_BOARD.id)
-  if (!stmt.oneBoard.get(boardId)) return res.status(400).json({ error: 'Unknown board.' })
+  if (!stmt.oneActiveBoard.get(boardId)) return res.status(400).json({ error: 'Unknown active board.' })
   const status = body.status || 'todo'
   try {
     if (status === 'progress') ensureProgressCapacity(boardId)
@@ -755,8 +826,8 @@ app.put('/api/cards/:id', (req, res) => {
     && (existing.status !== 'progress' || existing.board_id !== nextBoardId)
 
   try {
-    if (!stmt.oneBoard.get(nextBoardId)) {
-      return res.status(400).json({ error: 'Unknown board.' })
+    if (!stmt.oneActiveBoard.get(nextBoardId)) {
+      return res.status(400).json({ error: 'Unknown active board.' })
     }
     if (entersProgress) ensureProgressCapacity(nextBoardId)
 

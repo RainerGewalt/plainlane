@@ -6,6 +6,7 @@ import { api } from './api.js'
 import { formatLaneAge } from './laneAge.js'
 import CardModal from './CardModal.jsx'
 import BoardModal from './BoardModal.jsx'
+import BoardStorageModal from './BoardStorageModal.jsx'
 
 const COLUMNS = [
   { id: 'todo', title: 'To Do' },
@@ -19,6 +20,7 @@ const catLabel = (key) => CATEGORIES[key]?.label || key
 
 export default function App() {
   const [boards, setBoards] = useState([])
+  const [storedBoards, setStoredBoards] = useState([])
   const [activeBoardId, setActiveBoardId] = useState(null)
   const [cards, setCards] = useState([])
   const [loading, setLoading] = useState(true)
@@ -28,12 +30,14 @@ export default function App() {
   const [filterPhase, setFilterPhase] = useState('all')
   const [query, setQuery] = useState('')
   const [boardModal, setBoardModal] = useState(null) // null | { board? }
+  const [storageOpen, setStorageOpen] = useState(false)
   const [aiStatus, setAiStatus] = useState({ configured: false, model: '' })
   const [dragId, setDragId] = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
   const [collapsed, setCollapsed] = useState(() => new Set())
   const [clockNow, setClockNow] = useState(Date.now())
   const [undo, setUndo] = useState(null) // null | { id, from, to, title }
+  const [boardUndo, setBoardUndo] = useState(null) // null | { id, name, action }
   const fileInputRef = useRef(null)
 
   const activeBoard = boards.find((b) => b.id === activeBoardId) || null
@@ -59,8 +63,9 @@ export default function App() {
 
   async function boot() {
     try {
-      const bs = await api.listBoards()
+      const [bs, stored] = await Promise.all([api.listBoards(), api.listStoredBoards()])
       setBoards(bs)
+      setStoredBoards(stored)
       const saved = localStorage.getItem(LAST_BOARD_KEY)
       const chosen = bs.find((b) => b.id === saved)?.id || bs[0]?.id
       setActiveBoardId(chosen)
@@ -94,6 +99,18 @@ export default function App() {
 
   async function refreshBoards() {
     try { setBoards(await api.listBoards()) } catch (e) { console.error(e) }
+  }
+
+  async function refreshBoardLists() {
+    try {
+      const [active, stored] = await Promise.all([api.listBoards(), api.listStoredBoards()])
+      setBoards(active)
+      setStoredBoards(stored)
+      return active
+    } catch (e) {
+      console.error(e)
+      return null
+    }
   }
 
   function onApiError(e) {
@@ -167,6 +184,12 @@ export default function App() {
     const timer = setTimeout(() => setUndo(null), 8000)
     return () => clearTimeout(timer)
   }, [undo])
+
+  useEffect(() => {
+    if (!boardUndo) return undefined
+    const timer = setTimeout(() => setBoardUndo(null), 8000)
+    return () => clearTimeout(timer)
+  }, [boardUndo])
 
   // ---------- Metrics ----------
   const stats = useMemo(() => {
@@ -375,15 +398,49 @@ export default function App() {
       setBoardModal(null)
     } catch (e) { onApiError(e) }
   }
-  async function deleteBoard() {
-    const id = boardModal?.board?.id
-    if (!id) return
+  async function storeBoard(action) {
+    const board = boardModal?.board
+    if (!board) return
     try {
-      await api.removeBoard(id)
-      const rest = boards.filter((b) => b.id !== id)
+      if (action === 'archived') await api.archiveBoard(board.id)
+      else await api.trashBoard(board.id)
+      const rest = boards.filter((candidate) => candidate.id !== board.id)
       setBoards(rest)
       setBoardModal(null)
-      if (activeBoardId === id && rest[0]) selectBoard(rest[0].id)
+      if (activeBoardId === board.id && rest[0]) selectBoard(rest[0].id)
+      setStoredBoards(await api.listStoredBoards())
+      setBoardUndo({ id: board.id, name: board.name, action })
+      setError(null)
+    } catch (e) { onApiError(e) }
+  }
+
+  async function undoBoardStorage() {
+    if (!boardUndo) return
+    const board = boardUndo
+    setBoardUndo(null)
+    try {
+      await api.restoreBoard(board.id)
+      const active = await refreshBoardLists()
+      if (active?.some((candidate) => candidate.id === board.id)) selectBoard(board.id)
+      setError(null)
+    } catch (e) { onApiError(e) }
+  }
+
+  async function restoreBoard(board) {
+    try {
+      await api.restoreBoard(board.id)
+      const active = await refreshBoardLists()
+      setStorageOpen(false)
+      if (active?.some((candidate) => candidate.id === board.id)) selectBoard(board.id)
+      setError(null)
+    } catch (e) { onApiError(e) }
+  }
+
+  async function deleteBoardPermanently(board) {
+    try {
+      await api.removeBoardPermanently(board.id)
+      setStoredBoards((current) => current.filter((candidate) => candidate.id !== board.id))
+      setError(null)
     } catch (e) { onApiError(e) }
   }
 
@@ -456,6 +513,16 @@ export default function App() {
             )
           })}
         </div>
+        <button
+          type="button"
+          className="board-storage"
+          data-action="board-storage"
+          onClick={() => setStorageOpen(true)}
+          aria-label={`Open board storage. ${storedBoards.length} stored ${storedBoards.length === 1 ? 'board' : 'boards'}.`}
+        >
+          <span aria-hidden="true">Archive</span>
+          {storedBoards.length > 0 && <span className="board-storage-count" aria-hidden="true">{storedBoards.length}</span>}
+        </button>
         <button type="button" className="board-add" onClick={() => setBoardModal({})}>+ Board</button>
       </nav>
 
@@ -500,6 +567,18 @@ export default function App() {
           </span>
           <button type="button" className="btn tiny" onClick={undoMove}>Undo</button>
           <button type="button" className="banner-dismiss" onClick={() => setUndo(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+
+      {boardUndo && (
+        <div className="banner undo" role="status">
+          <span className="undo-text">
+            {boardUndo.action === 'archived'
+              ? `Archived “${boardUndo.name}”.`
+              : `Moved “${boardUndo.name}” to trash.`}
+          </span>
+          <button type="button" className="btn tiny" onClick={undoBoardStorage}>Undo</button>
+          <button type="button" className="banner-dismiss" onClick={() => setBoardUndo(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
 
@@ -610,13 +689,23 @@ export default function App() {
       {boardModal && (
         <BoardModal
           board={boardModal.board}
-          canDelete={boards.length > 1}
+          canStore={boards.length > 1}
           onClose={() => setBoardModal(null)}
           onSave={saveBoard}
-          onDelete={deleteBoard}
+          onArchive={() => storeBoard('archived')}
+          onTrash={() => storeBoard('trashed')}
           progressCount={boardModal.board?.id === activeBoardId
             ? stats.progress
             : (boardModal.board?.progressCount || 0)}
+        />
+      )}
+
+      {storageOpen && (
+        <BoardStorageModal
+          boards={storedBoards}
+          onClose={() => setStorageOpen(false)}
+          onRestore={restoreBoard}
+          onDeletePermanently={deleteBoardPermanently}
         />
       )}
 

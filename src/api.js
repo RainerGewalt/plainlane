@@ -21,9 +21,13 @@ async function request(method, url, body) {
 export const api = {
   // Boards
   listBoards: () => request('GET', '/boards'),
+  listStoredBoards: () => request('GET', '/boards/storage'),
   createBoard: (board) => request('POST', '/boards', board),
   updateBoard: (id, patch) => request('PUT', `/boards/${id}`, patch),
-  removeBoard: (id) => request('DELETE', `/boards/${id}`),
+  archiveBoard: (id) => request('POST', `/boards/${id}/archive`),
+  trashBoard: (id) => request('POST', `/boards/${id}/trash`),
+  restoreBoard: (id) => request('POST', `/boards/${id}/restore`),
+  removeBoardPermanently: (id) => request('DELETE', `/boards/${id}`),
 
   // Cards on a board
   listCards: (boardId) => request('GET', `/boards/${boardId}/cards`),

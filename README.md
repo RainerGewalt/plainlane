@@ -1,20 +1,22 @@
 <p align="center">
-  <img src="docs/plainlane-mark.svg" width="720" alt="Plainlane — the card is the workspace" />
+  <img src="docs/plainlane-mark.svg" width="720" alt="Plainlane — tasks, files, and next steps together" />
 </p>
 
-<p align="center"><strong>A small, self-hosted Kanban that keeps the task and its evidence together.</strong></p>
+<p align="center"><strong>The simple self-hosted board for tasks with files.</strong></p>
 
-Plainlane gives you three lanes—**To Do**, **In Progress**, and **Done**—plus the context needed to finish the work. Comments, forms, saved emails, documents, and optional web research all stay attached to the card in one mounted SQLite database.
+**Keep every task, file, note, and next step together.** Plainlane gives you three lanes—**To Do**, **In Progress**, and **Done**—plus the context needed to finish real-life work. Steps, comments, saved emails, documents, and optional web research stay attached to the card in one mounted SQLite database.
 
-No accounts. No due dates. No notification machine.
+**Three lanes. One command. No project-management overhead.**
 
 ## Why Plainlane?
 
-Most tiny Kanban boards track the task while its useful context lives elsewhere. Plainlane's difference is simple:
+Plainlane is built for tasks where the card is only the start: a form to submit, documents to collect, an email to save, a response to track, and several small steps to finish.
 
-> **The card is the workspace.** The task, conversation, files, evidence, and researched sources move together.
+> **Other boards manage tasks. Plainlane helps you finish tasks with context.**
 
-That makes Plainlane useful for personal administration, applications, purchases, home projects, research, and any process where finishing a task means keeping documents and decisions close at hand.
+It fits moves, applications, paperwork, purchases, claims, renovations, and other personal projects with supporting material. It is designed for an individual or household that wants to own its data without administering a full project-management system.
+
+Plainlane is deliberately not a team platform. It has no accounts, roles, calendars, due dates, notifications, mailbox sync, or automation engine.
 
 ## Start in one command
 
@@ -35,6 +37,7 @@ Open [http://localhost:8080](http://localhost:8080). The start script also print
 ## What you get
 
 - Browser-managed boards and cards
+- Reversible board archive and trash, with permanent deletion kept in trash
 - Drag and drop plus keyboard-accessible move buttons
 - Inline card expansion for details and subtasks
 - Move undo and a guard against completing cards with open subtasks
@@ -50,6 +53,14 @@ Open [http://localhost:8080](http://localhost:8080). The start script also print
 - One mounted SQLite database—no external database service
 
 Plainlane deliberately stops there. It has no accounts, roles, due dates, notifications, mailbox sync, or automation engine.
+
+## Safe board housekeeping
+
+Archive boards you want out of the board bar, or move them to trash with an immediate **Undo** option. Both states keep cards and files intact. Restore them from **Board storage** at any time; permanent deletion is available only for boards already in trash.
+
+<p align="center">
+  <img src="docs/plainlane-board-storage.png" width="1000" alt="Plainlane Board storage with archived boards, trash, and restore controls" />
+</p>
 
 ## Optional AI research
 
@@ -67,7 +78,7 @@ AI usage may cost money. Verify important information at the linked original sou
 
 The complete state lives in `/data/plainlane.db` inside the Docker volume. Use **Export** in the browser for a portable board backup. Exports include attachment contents, so treat them as sensitive files.
 
-Each card also exposes `statusChangedAt` through the local API and JSON export. Plainlane updates this timestamp only when the main card changes lane; it powers the optional time-in-column hint. Board responses expose `progress_limit` (`null` means unlimited) and `show_lane_age` (`0` or `1`) for the corresponding board options.
+Each card also exposes `statusChangedAt` through the local API and JSON export. Plainlane updates this timestamp only when the main card changes lane; it powers the optional time-in-column hint. Board responses expose `progress_limit` (`null` means unlimited) and `show_lane_age` (`0` or `1`) for the corresponding board options. Archived and trashed boards are stored through the additive `archived_at` and `deleted_at` fields and remain in the same database until explicitly deleted from trash.
 
 Plainlane has **no login screen**. Anyone who can reach its port can use the app and access its files. Keep it on a trusted network, bind it to localhost, or place it behind an authenticated reverse proxy. Do not expose port 8080 directly to the internet.
 

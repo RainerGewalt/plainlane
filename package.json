@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "A small self-hosted Kanban board with files, comments, and optional AI web research",
+  "description": "The simple self-hosted board for tasks with files",
   "scripts": {
     "dev": "concurrently -k -n server,client -c yellow,cyan \"npm:server\" \"npm:client\"",
     "server": "node server/index.js",

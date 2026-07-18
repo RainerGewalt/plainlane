@@ -507,6 +507,16 @@ a { color: var(--action); text-underline-offset: 2px; }
   background: transparent; color: var(--muted); font-size: 13px; font-weight: 500;
 }
 .board-add:hover { color: var(--accent); border-color: var(--accent); }
+.board-storage {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 40px;
+  padding: 7px 11px; border-radius: 999px; border: 1px solid var(--border);
+  background: transparent; color: var(--muted); font-size: 12px; font-weight: 600;
+}
+.board-storage:hover { color: var(--text); border-color: var(--muted); }
+.board-storage-count {
+  min-width: 19px; padding: 1px 6px; border-radius: 999px; background: var(--border);
+  color: var(--text); font-size: 10px; font-weight: 750; text-align: center;
+}
 
 .board-edit {
   margin-left: 8px; border: none; background: transparent; color: var(--muted);
@@ -579,7 +589,43 @@ a { color: var(--action); text-underline-offset: 2px; }
 .accent-swatch { width: 38px; height: 38px; border-radius: 50%; border: 4px solid transparent; cursor: pointer; }
 .accent-swatch.active { border-color: var(--text); box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px currentColor; }
 .board-modal-actions { flex-wrap: wrap; }
-.board-delete { margin-left: auto; }
+.board-lifecycle {
+  margin-top: 18px; padding: 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel-2);
+}
+.board-lifecycle > strong { display: block; font-size: 12px; color: var(--text); }
+.board-lifecycle p { margin: 4px 0 10px; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+.board-lifecycle > small { display: block; margin-top: 8px; color: var(--muted); font-size: 11px; }
+.board-lifecycle-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---------- Board storage ---------- */
+.board-storage-modal { max-width: 680px; }
+.modal-intro { margin: 8px 38px 20px 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.stored-board-section + .stored-board-section { margin-top: 22px; }
+.stored-board-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.stored-board-heading h3 { margin: 0; font-size: 14px; }
+.stored-board-heading span {
+  min-width: 21px; padding: 1px 6px; border-radius: 999px; background: var(--panel-2);
+  color: var(--muted); font-size: 10px; font-weight: 750; text-align: center;
+}
+.stored-board-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.stored-board-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px;
+  padding: 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2);
+}
+.stored-board-icon {
+  display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px;
+  background: color-mix(in srgb, var(--stored-accent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stored-accent) 45%, var(--border));
+}
+.stored-board-copy { display: flex; flex-direction: column; min-width: 0; }
+.stored-board-copy strong { overflow: hidden; color: var(--text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.stored-board-copy small { margin-top: 2px; color: var(--muted); font-size: 11px; }
+.stored-board-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.stored-board-empty {
+  margin: 0; padding: 13px; border: 1px dashed var(--border); border-radius: 10px;
+  color: var(--muted); font-size: 12px;
+}
 
 @media (max-width: 560px) {
   .topbar, .boardbar, .filters { padding-left: 16px; padding-right: 16px; }
@@ -588,6 +634,11 @@ a { color: var(--action); text-underline-offset: 2px; }
   .board { padding-left: 16px; padding-right: 16px; }
   .topactions { width: 100%; margin-left: 0; }
   .topactions .btn { flex: 1; }
+  .board-storage > span:first-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .board-storage { padding-left: 10px; padding-right: 10px; }
+  .board-storage::before { content: "▣"; }
+  .stored-board-row { grid-template-columns: auto minmax(0, 1fr); }
+  .stored-board-actions { grid-column: 1 / -1; justify-content: flex-start; }
 }
 
 @media (prefers-reduced-motion: reduce) {

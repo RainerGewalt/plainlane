@@ -6,7 +6,7 @@ import { validateBoard, BOARD_NAME_MAX as NAME_MAX } from './validation.js'
 const ACCENTS = ['#e11d48', '#ea580c', '#f59e0b', '#16a34a', '#0d9488', '#0ea5e9', '#4f46e5', '#8b5cf6', '#db2777', '#64748b']
 const EMOJI_SUGGESTIONS = ['🗂️', '🏠', '💼', '✈️', '🚗', '💰', '🩺', '🎓', '🛠️', '🎉', '🐕', '📦']
 
-export default function BoardModal({ board, canDelete, onClose, onSave, onDelete, progressCount = 0 }) {
+export default function BoardModal({ board, canStore, onClose, onSave, onArchive, onTrash, progressCount = 0 }) {
   const isEdit = Boolean(board)
   const titleId = useId()
   const validate = (values) => {
@@ -180,20 +180,39 @@ export default function BoardModal({ board, canDelete, onClose, onSave, onDelete
           </span>
         </label>
 
+        {isEdit && (
+          <div className="board-lifecycle">
+            <strong>Board storage</strong>
+            <p>Archive hides this board. Trash keeps it recoverable until you delete it permanently from Board storage.</p>
+            <div className="board-lifecycle-actions">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={onArchive}
+                disabled={!canStore}
+                title={canStore ? 'Hide this board in the archive' : 'The last active board cannot be archived'}
+              >
+                Archive board
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                onClick={onTrash}
+                disabled={!canStore}
+                title={canStore ? 'Move this board to trash' : 'The last active board cannot be moved to trash'}
+              >
+                Move to trash
+              </button>
+            </div>
+            {!canStore && <small>Keep at least one active board.</small>}
+          </div>
+        )}
+
         <div className="modal-actions board-modal-actions">
           <button type="submit" className="btn primary" disabled={!isValid}>
             {isEdit ? 'Save changes' : 'Create board'}
           </button>
           <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
-          {isEdit && canDelete && (
-            <button
-              type="button"
-              className="btn danger board-delete"
-              onClick={() => { if (confirm(`Delete “${board.name}” and all of its cards?`)) onDelete() }}
-            >
-              Delete board
-            </button>
-          )}
         </div>
       </form>
     </div>
