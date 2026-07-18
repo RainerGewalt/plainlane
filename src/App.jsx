@@ -214,6 +214,53 @@ export default function App() {
     api.removeDocument(documentId).catch(onApiError)
   }
 
+  // ---------- Subtask actions ----------
+  async function addSubtask(cardId, title) {
+    const subtask = await api.addSubtask(cardId, title)
+    setCards((cs) => cs.map((card) => {
+      if (card.id === cardId) {
+        const subtasks = [...(card.subtasks || []), subtask]
+        const finalStatuses = new Set(['done', 'wont_do', 'old', 'question'])
+        const doneCount = subtasks.filter(s => s.status === 'done').length
+        const finalCount = subtasks.filter(s => finalStatuses.has(s.status)).length
+        const completionPct = subtasks.length > 0 ? Math.round((finalCount / subtasks.length) * 100) : 100
+        return { ...card, subtasks, doneCount, subtaskCount: subtasks.length, completionPct }
+      }
+      return card
+    }))
+    return subtask
+  }
+  async function updateSubtask(subtaskId, patch) {
+    const updated = await api.updateSubtask(subtaskId, patch)
+    setCards((cs) => cs.map((card) => {
+      const foundSubtask = (card.subtasks || []).find(s => s.id === subtaskId)
+      if (foundSubtask) {
+        const subtasks = card.subtasks.map((s) => s.id === subtaskId ? updated : s)
+        const finalStatuses = new Set(['done', 'wont_do', 'old', 'question'])
+        const doneCount = subtasks.filter(s => s.status === 'done').length
+        const finalCount = subtasks.filter(s => finalStatuses.has(s.status)).length
+        const completionPct = subtasks.length > 0 ? Math.round((finalCount / subtasks.length) * 100) : 100
+        return { ...card, subtasks, doneCount, subtaskCount: subtasks.length, completionPct }
+      }
+      return card
+    }))
+    return updated
+  }
+  function deleteSubtask(cardId, subtaskId) {
+    setCards((cs) => cs.map((card) => {
+      if (card.id === cardId) {
+        const subtasks = (card.subtasks || []).filter((s) => s.id !== subtaskId)
+        const finalStatuses = new Set(['done', 'wont_do', 'old', 'question'])
+        const doneCount = subtasks.filter(s => s.status === 'done').length
+        const finalCount = subtasks.filter(s => finalStatuses.has(s.status)).length
+        const completionPct = subtasks.length > 0 ? Math.round((finalCount / subtasks.length) * 100) : 100
+        return { ...card, subtasks, doneCount, subtaskCount: subtasks.length, completionPct }
+      }
+      return card
+    }))
+    api.removeSubtask(subtaskId).catch(onApiError)
+  }
+
   // ---------- Board actions ----------
   async function saveBoard(data) {
     try {
@@ -448,6 +495,10 @@ export default function App() {
           onAddDocument={(payload) => addDocument(openCard.id, payload)}
           onUpdateDocument={(documentId, patch) => updateDocument(openCard.id, documentId, patch)}
           onDeleteDocument={(documentId) => deleteDocument(openCard.id, documentId)}
+          onAddSubtask={(title) => addSubtask(openCard.id, title)}
+          onUpdateSubtask={updateSubtask}
+          onDeleteSubtask={(subtaskId) => deleteSubtask(openCard.id, subtaskId)}
+          boardSubtaskLimit={boards.find(b => b.id === openCard.board_id)?.subtask_limit || 10}
         />
       )}
 
@@ -499,9 +550,16 @@ function CardTile({ card, onOpen, onDragStart, onDragEnd, onMove }) {
       </button>
       <div className="card-foot">
         <div className="card-chips">
+          {card.status === 'done' && <span className="badge badge-done">✓ Done</span>}
+          {card.status !== 'done' && card.completionPct !== undefined && card.subtaskCount > 0 && (
+            <span className={`badge badge-progress badge-${card.completionPct === 100 ? 'ready' : 'progress'}`}>
+              {card.doneCount}/{card.subtaskCount}
+            </span>
+          )}
           {(card.comments || []).length > 0 && <span className="chip" aria-label={`${card.comments.length} comments`}>💬 {card.comments.length}</span>}
           {(card.researchRuns || []).length > 0 && <span className="chip ai-chip" aria-label={`${card.researchRuns.length} research results`}>AI {card.researchRuns.length}</span>}
           {(card.documents || []).length > 0 && <span className="chip document-chip" aria-label={`${card.documents.length} attachments`}>📎 {card.documents.length}</span>}
+          {(card.subtasks || []).length > 0 && <span className="chip subtask-chip" aria-label={`${card.subtasks.length} subtasks`}>📋 {card.subtasks.length}</span>}
         </div>
         <div className="movebtns">
           {prevStatus && (

@@ -40,6 +40,43 @@ function fileToBase64(file) {
   })
 }
 
+const SUBTASK_STATUSES = {
+  todo: '○ To do',
+  done: '✓ Done',
+  wont_do: '✗ Won\'t do',
+  question: '❓ Question',
+  old: '⏱ Old',
+}
+
+function SubtaskItem({ subtask, onUpdate, onDelete }) {
+  const statusOrder = ['todo', 'done', 'wont_do', 'question', 'old']
+  const currentIndex = statusOrder.indexOf(subtask.status)
+  const nextStatus = statusOrder[(currentIndex + 1) % statusOrder.length]
+
+  return (
+    <div className="subtask-item">
+      <button
+        type="button"
+        className={`subtask-status subtask-${subtask.status}`}
+        onClick={() => onUpdate(subtask.id, { status: nextStatus })}
+        title={`Click to change status (current: ${subtask.status})`}
+        aria-label={`Change status for "${subtask.title}"`}
+      >
+        {SUBTASK_STATUSES[subtask.status]}
+      </button>
+      <span className="subtask-title">{subtask.title}</span>
+      <button
+        type="button"
+        className="subtask-delete"
+        onClick={() => { if (confirm('Delete this subtask?')) onDelete(subtask.id) }}
+        aria-label={`Delete "${subtask.title}"`}
+      >
+        ✕
+      </button>
+    </div>
+  )
+}
+
 function TextWithLinks({ text }) {
   const parts = text.split(/(https?:\/\/[^\s]+)/g)
   return parts.map((part, index) => (
@@ -194,6 +231,10 @@ export default function CardModal({
   onAddDocument,
   onUpdateDocument,
   onDeleteDocument,
+  onAddSubtask,
+  onUpdateSubtask,
+  onDeleteSubtask,
+  boardSubtaskLimit,
 }) {
   const [edit, setEdit] = useState(false)
   const [draft, setDraft] = useState(card)
@@ -205,9 +246,13 @@ export default function CardModal({
   const [documentInputKey, setDocumentInputKey] = useState(0)
   const [documentUploading, setDocumentUploading] = useState(false)
   const [documentError, setDocumentError] = useState('')
+  const [subtaskInput, setSubtaskInput] = useState('')
+  const [subtaskError, setSubtaskError] = useState('')
+  const [subtaskAdding, setSubtaskAdding] = useState(false)
   const titleId = useId()
   const researchInputId = useId()
   const commentInputId = useId()
+  const subtaskInputId = useId()
 
   useEffect(() => {
     setDraft(card)
@@ -216,6 +261,8 @@ export default function CardModal({
     setResearchError('')
     setDocumentDraft({ file: null, kind: 'form', status: 'open', note: '' })
     setDocumentError('')
+    setSubtaskInput('')
+    setSubtaskError('')
   }, [card.id])
 
   useEffect(() => {
@@ -240,6 +287,22 @@ export default function CardModal({
       contact: draft.contact,
     })
     setEdit(false)
+  }
+
+  async function submitSubtask(event) {
+    event.preventDefault()
+    const title = subtaskInput.trim()
+    if (!title) return
+    setSubtaskAdding(true)
+    setSubtaskError('')
+    try {
+      await onAddSubtask(title)
+      setSubtaskInput('')
+    } catch (error) {
+      setSubtaskError(error.message || 'Could not add subtask.')
+    } finally {
+      setSubtaskAdding(false)
+    }
   }
 
   function submitComment(event) {
@@ -373,6 +436,62 @@ export default function CardModal({
             </div>
           </div>
         )}
+
+        <hr className="sep" />
+
+        <section className="subtasks">
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">Breaking it down</span>
+              <h3>Subtasks <span className="count">{card.subtasks?.length || 0}</span></h3>
+            </div>
+            {card.subtasks?.length > 0 && card.completionPct !== undefined && (
+              <div className="subtask-progress">
+                <div className="progress-bar">
+                  <div className="progress-fill" style={{ width: `${card.completionPct}%` }}></div>
+                </div>
+                <span className="progress-text">{card.completionPct}%</span>
+              </div>
+            )}
+          </div>
+
+          <form className="subtask-form" onSubmit={submitSubtask}>
+            <label className="sr-only" htmlFor={subtaskInputId}>Add subtask</label>
+            <input
+              id={subtaskInputId}
+              type="text"
+              placeholder="Add a subtask…"
+              value={subtaskInput}
+              onChange={(event) => setSubtaskInput(event.target.value)}
+              disabled={subtaskAdding || (boardSubtaskLimit && (card.subtasks?.length || 0) >= boardSubtaskLimit)}
+              maxLength={500}
+            />
+            <button
+              className="btn primary"
+              type="submit"
+              disabled={!subtaskInput.trim() || subtaskAdding || (boardSubtaskLimit && (card.subtasks?.length || 0) >= boardSubtaskLimit)}
+            >
+              {subtaskAdding ? 'Adding…' : 'Add'}
+            </button>
+            {boardSubtaskLimit && (card.subtasks?.length || 0) >= boardSubtaskLimit && (
+              <p className="form-hint">Max {boardSubtaskLimit} subtasks reached for this board</p>
+            )}
+            {subtaskError && <p className="form-error" role="alert">{subtaskError}</p>}
+          </form>
+
+          {(card.subtasks?.length || 0) > 0 && (
+            <div className="subtask-list">
+              {card.subtasks.map((subtask) => (
+                <SubtaskItem
+                  subtask={subtask}
+                  key={subtask.id}
+                  onUpdate={(id, patch) => { if (onUpdateSubtask) onUpdateSubtask(id, patch) }}
+                  onDelete={(id) => { if (onDeleteSubtask) onDeleteSubtask(id) }}
+                />
+              ))}
+            </div>
+          )}
+        </section>
 
         <hr className="sep" />
 

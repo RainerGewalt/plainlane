@@ -9,6 +9,7 @@ export default function BoardModal({ board, canDelete, onClose, onSave, onDelete
   const [name, setName] = useState(board?.name || '')
   const [emoji, setEmoji] = useState(board?.emoji || '🗂️')
   const [accent, setAccent] = useState(board?.accent || '#4f46e5')
+  const [subtaskLimit, setSubtaskLimit] = useState(board?.subtask_limit || 10)
   const titleId = useId()
 
   useEffect(() => {
@@ -24,7 +25,12 @@ export default function BoardModal({ board, canDelete, onClose, onSave, onDelete
 
   function submit(e) {
     e.preventDefault()
-    onSave({ name: name.trim() || 'New board', emoji: emoji.trim() || '🗂️', accent })
+    onSave({
+      name: name.trim() || 'New board',
+      emoji: emoji.trim() || '🗂️',
+      accent,
+      subtask_limit: Math.max(1, Math.min(10, Number(subtaskLimit)))
+    })
   }
 
   return (
@@ -81,6 +87,17 @@ export default function BoardModal({ board, canDelete, onClose, onSave, onDelete
             />
           ))}
         </div>
+
+        <label className="field">Max subtasks per card
+          <input
+            type="number"
+            min="1"
+            max="10"
+            value={subtaskLimit}
+            onChange={(e) => setSubtaskLimit(Math.max(1, Math.min(10, Number(e.target.value))))}
+            title="Maximum number of subtasks allowed per card (1-10)"
+          />
+        </label>
 
         <div className="modal-actions board-modal-actions">
           <button type="submit" className="btn primary">{isEdit ? 'Save' : 'Create board'}</button>

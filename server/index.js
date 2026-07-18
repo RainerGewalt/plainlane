@@ -53,6 +53,15 @@ db.exec(`
     ord       INTEGER NOT NULL DEFAULT 0,
     createdAt INTEGER
   );
+  CREATE TABLE IF NOT EXISTS subtasks (
+    id        TEXT PRIMARY KEY,
+    card_id   TEXT NOT NULL,
+    title     TEXT NOT NULL,
+    status    TEXT NOT NULL DEFAULT 'todo',
+    ord       INTEGER NOT NULL DEFAULT 0,
+    createdAt INTEGER NOT NULL,
+    FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+  );
   CREATE TABLE IF NOT EXISTS comments (
     id      TEXT PRIMARY KEY,
     card_id TEXT NOT NULL,
@@ -97,6 +106,9 @@ db.exec(`
 // Additive schema migration for databases created by earlier versions.
 const cardColumns = db.prepare('PRAGMA table_info(cards)').all().map((c) => c.name)
 if (!cardColumns.includes('board_id')) db.exec('ALTER TABLE cards ADD COLUMN board_id TEXT')
+
+const boardColumns = db.prepare('PRAGMA table_info(boards)').all().map((c) => c.name)
+if (!boardColumns.includes('subtask_limit')) db.exec('ALTER TABLE boards ADD COLUMN subtask_limit INTEGER NOT NULL DEFAULT 10')
 
 // ---------- Prepared statements ----------
 const stmt = {
@@ -150,6 +162,15 @@ const stmt = {
   ),
   delCard: db.prepare('DELETE FROM cards WHERE id = ?'),
   delCardsByBoard: db.prepare('DELETE FROM cards WHERE board_id = ?'),
+
+  cardSubtasks: db.prepare('SELECT id, title, status, ord, createdAt FROM subtasks WHERE card_id = ? ORDER BY ord ASC, createdAt ASC'),
+  oneSubtask: db.prepare('SELECT id, title, status, ord, createdAt FROM subtasks WHERE id = ?'),
+  insSubtask: db.prepare(
+    `INSERT INTO subtasks (id, card_id, title, status, ord, createdAt)
+     VALUES (@id, @card_id, @title, @status, @ord, @createdAt)`
+  ),
+  delSubtask: db.prepare('DELETE FROM subtasks WHERE id = ?'),
+
   insComment: db.prepare('INSERT INTO comments (id, card_id, text, ts) VALUES (@id, @card_id, @text, @ts)'),
   delComment: db.prepare('DELETE FROM comments WHERE id = ?'),
   insResearch: db.prepare(
@@ -178,17 +199,38 @@ function ensureDefaultBoard() {
   }
 }
 
+function ensureInitialBoard() {
+  const existingBoard = stmt.allBoards.all()[0]
+  if (existingBoard) return existingBoard
+  ensureDefaultBoard()
+  return stmt.oneBoard.get(DEFAULT_BOARD.id)
+}
+
 function hydrateResearch(run) {
   return { ...run, sources: stmt.researchSources.all(run.id) }
 }
 
 function hydrateCard(row) {
   if (!row) return null
+  const subtasks = stmt.cardSubtasks.all(row.id)
+  const finalStatuses = new Set(['done', 'wont_do', 'old', 'question'])
+  const doneCount = subtasks.filter(s => s.status === 'done').length
+  const finalCount = subtasks.filter(s => finalStatuses.has(s.status)).length
+  const completionPct = subtasks.length > 0 ? Math.round((finalCount / subtasks.length) * 100) : 100
+
+  const latestSubtaskTime = subtasks.length > 0 ? Math.max(...subtasks.map(s => s.createdAt)) : row.createdAt
+  const updatedAt = Math.max(row.createdAt, latestSubtaskTime)
+
   return {
     ...row,
     comments: stmt.cardComments.all(row.id),
     researchRuns: stmt.cardResearch.all(row.id).map(hydrateResearch),
     documents: stmt.cardDocuments.all(row.id),
+    subtasks,
+    completionPct,
+    doneCount,
+    subtaskCount: subtasks.length,
+    updatedAt,
   }
 }
 
@@ -312,6 +354,7 @@ function exportCards(boardId) {
       ...documentMetadata(document),
       dataBase64: document.data.toString('base64'),
     }))
+    // Subtasks are already included by hydrateCard
     return card
   })
 }
@@ -341,18 +384,29 @@ const importIntoBoard = db.transaction((boardId, cards) => {
         ts: comment.ts || Date.now(),
       })
     )
+    ;(card.subtasks || []).forEach((subtask) =>
+      stmt.insSubtask.run({
+        id: String(subtask.id || `s-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+        card_id: cardId,
+        title: subtask.title || 'Unnamed subtask',
+        status: subtask.status || 'todo',
+        ord: Number.isFinite(subtask.ord) ? subtask.ord : undefined,
+        createdAt: subtask.createdAt || Date.now(),
+      })
+    )
     ;(card.researchRuns || []).forEach((run) => insertResearch(cardId, run))
     ;(card.documents || []).forEach((document) => insertDocument(cardId, document))
   })
 })
 
-// Create the default board and attach orphaned cards from older databases.
-ensureDefaultBoard()
-db.prepare('UPDATE cards SET board_id = ? WHERE board_id IS NULL').run(DEFAULT_BOARD.id)
+// Keep existing boards intact. Create the starter board only for a database
+// without boards, then attach cards from older single-board databases to it.
+const initialBoard = ensureInitialBoard()
+db.prepare('UPDATE cards SET board_id = ? WHERE board_id IS NULL').run(initialBoard.id)
 
 // Seed only a completely empty database.
 if (stmt.count.get().n === 0) {
-  importIntoBoard(DEFAULT_BOARD.id, SEED_CARDS)
+  importIntoBoard(initialBoard.id, SEED_CARDS)
   console.log(`[db] Created ${SEED_CARDS.length} starter cards.`)
 }
 
@@ -519,11 +573,15 @@ app.post('/api/boards', (req, res) => {
 app.put('/api/boards/:id', (req, res) => {
   const board = stmt.oneBoard.get(req.params.id)
   if (!board) return res.status(404).json({ error: 'Board not found.' })
-  const allowed = ['name', 'emoji', 'accent', 'ord']
+  const allowed = ['name', 'emoji', 'accent', 'ord', 'subtask_limit']
   const keys = allowed.filter((key) => key in (req.body || {}))
   if (keys.length) {
     const setSql = keys.map((key) => `${key} = @${key}`).join(', ')
-    db.prepare(`UPDATE boards SET ${setSql} WHERE id = @id`).run({ ...req.body, id: req.params.id })
+    const values = { ...req.body, id: req.params.id }
+    if (values.subtask_limit) {
+      values.subtask_limit = Math.max(1, Math.min(10, Number(values.subtask_limit)))
+    }
+    db.prepare(`UPDATE boards SET ${setSql} WHERE id = @id`).run(values)
   }
   res.json(stmt.oneBoard.get(req.params.id))
 })
@@ -593,6 +651,53 @@ app.put('/api/cards/:id', (req, res) => {
 
 app.delete('/api/cards/:id', (req, res) => {
   stmt.delCard.run(req.params.id)
+  res.status(204).end()
+})
+
+// ----- Subtasks -----
+app.post('/api/cards/:id/subtasks', (req, res) => {
+  const card = stmt.oneCard.get(req.params.id)
+  if (!card) return res.status(404).json({ error: 'Task not found.' })
+  const board = stmt.oneBoard.get(card.board_id)
+  const limit = board?.subtask_limit || 10
+  const currentCount = stmt.cardSubtasks.all(req.params.id).length
+  if (currentCount >= limit) {
+    return res.status(409).json({ error: `Subtask limit (${limit}) reached for this board.` })
+  }
+  const title = String(req.body?.title || '').trim()
+  if (!title) return res.status(400).json({ error: 'Subtask title cannot be empty.' })
+  const subtaskId = rndId('s')
+  const maxSubtaskOrd = stmt.cardSubtasks.all(req.params.id).length
+  stmt.insSubtask.run({
+    id: subtaskId,
+    card_id: req.params.id,
+    title,
+    status: 'todo',
+    ord: maxSubtaskOrd,
+    createdAt: Date.now(),
+  })
+  res.status(201).json(stmt.cardSubtasks.all(req.params.id).find(s => s.id === subtaskId))
+})
+
+app.put('/api/subtasks/:id', (req, res) => {
+  const existing = stmt.oneSubtask.get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Subtask not found.' })
+  const body = req.body || {}
+  const allowed = ['title', 'status', 'ord']
+  const keys = allowed.filter((key) => key in body)
+  if (keys.length) {
+    const setSql = keys.map((key) => `${key} = @${key}`).join(', ')
+    const updates = { id: req.params.id }
+    if ('title' in body) updates.title = String(body.title || '').trim() || 'Unnamed'
+    if ('status' in body) updates.status = String(body.status || 'todo')
+    if ('ord' in body) updates.ord = Number(body.ord) || 0
+    db.prepare(`UPDATE subtasks SET ${setSql} WHERE id = @id`).run(updates)
+  }
+  res.json(stmt.oneSubtask.get(req.params.id))
+})
+
+app.delete('/api/subtasks/:id', (req, res) => {
+  stmt.delSubtask.run(req.params.id)
   res.status(204).end()
 })
 

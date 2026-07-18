@@ -35,6 +35,11 @@ export const api = {
   update: (id, patch) => request('PUT', `/cards/${id}`, patch),
   remove: (id) => request('DELETE', `/cards/${id}`),
 
+  // Subtasks
+  addSubtask: (cardId, title) => request('POST', `/cards/${cardId}/subtasks`, { title }),
+  updateSubtask: (id, patch) => request('PUT', `/subtasks/${id}`, patch),
+  removeSubtask: (id) => request('DELETE', `/subtasks/${id}`),
+
   // Comments, files, and research
   addComment: (id, text) => request('POST', `/cards/${id}/comments`, { text }),
   removeComment: (commentId) => request('DELETE', `/comments/${commentId}`),
