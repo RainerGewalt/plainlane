@@ -1,19 +1,14 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CATEGORIES, PHASES } from './seed.js'
 import { groupByCategory } from './grouping.js'
-import { SUBTASK_STATUSES, isDoneMoveAllowed } from './subtasks.js'
+import { SUBTASK_STATUSES, isDoneMoveAllowed, subtaskSummary } from './subtasks.js'
+import { LANES, LANE_LABELS, laneLabel } from './lanes.js'
 import { api } from './api.js'
 import { formatLaneAge } from './laneAge.js'
 import CardModal from './CardModal.jsx'
 import CardArchiveModal from './CardArchiveModal.jsx'
 import BoardModal from './BoardModal.jsx'
 import BoardStorageModal from './BoardStorageModal.jsx'
-
-const COLUMNS = [
-  { id: 'todo', title: 'To Do' },
-  { id: 'progress', title: 'In Progress' },
-  { id: 'done', title: 'Done' },
-]
 
 const LAST_BOARD_KEY = 'plainlane-last-board'
 const uid = () => `c-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -396,49 +391,38 @@ export default function App() {
   }
 
   // ---------- Subtask actions ----------
+  // Replace a card's subtasks and recompute the counters the tiles read from.
+  function withSubtasks(card, subtasks) {
+    return { ...card, subtasks, ...subtaskSummary(subtasks) }
+  }
   async function addSubtask(cardId, title) {
     const subtask = await api.addSubtask(cardId, title)
-    setCards((cs) => cs.map((card) => {
-      if (card.id === cardId) {
-        const subtasks = [...(card.subtasks || []), subtask]
-        const finalStatuses = new Set(['done', 'wont_do', 'old', 'question'])
-        const doneCount = subtasks.filter(s => s.status === 'done').length
-        const finalCount = subtasks.filter(s => finalStatuses.has(s.status)).length
-        const completionPct = subtasks.length > 0 ? Math.round((finalCount / subtasks.length) * 100) : 100
-        return { ...card, subtasks, doneCount, subtaskCount: subtasks.length, completionPct }
-      }
-      return card
-    }))
+    setCards((cs) => cs.map((card) => (
+      card.id === cardId ? withSubtasks(card, [...(card.subtasks || []), subtask]) : card
+    )))
     return subtask
   }
   async function updateSubtask(subtaskId, patch) {
-    const updated = await api.updateSubtask(subtaskId, patch)
-    setCards((cs) => cs.map((card) => {
-      const foundSubtask = (card.subtasks || []).find(s => s.id === subtaskId)
-      if (foundSubtask) {
-        const subtasks = card.subtasks.map((s) => s.id === subtaskId ? updated : s)
-        const finalStatuses = new Set(['done', 'wont_do', 'old', 'question'])
-        const doneCount = subtasks.filter(s => s.status === 'done').length
-        const finalCount = subtasks.filter(s => finalStatuses.has(s.status)).length
-        const completionPct = subtasks.length > 0 ? Math.round((finalCount / subtasks.length) * 100) : 100
-        return { ...card, subtasks, doneCount, subtaskCount: subtasks.length, completionPct }
-      }
-      return card
-    }))
+    let updated
+    try {
+      updated = await api.updateSubtask(subtaskId, patch)
+    } catch (e) {
+      onApiError(e)
+      return null
+    }
+    setCards((cs) => cs.map((card) => (
+      (card.subtasks || []).some((s) => s.id === subtaskId)
+        ? withSubtasks(card, card.subtasks.map((s) => (s.id === subtaskId ? updated : s)))
+        : card
+    )))
     return updated
   }
   function deleteSubtask(cardId, subtaskId) {
-    setCards((cs) => cs.map((card) => {
-      if (card.id === cardId) {
-        const subtasks = (card.subtasks || []).filter((s) => s.id !== subtaskId)
-        const finalStatuses = new Set(['done', 'wont_do', 'old', 'question'])
-        const doneCount = subtasks.filter(s => s.status === 'done').length
-        const finalCount = subtasks.filter(s => finalStatuses.has(s.status)).length
-        const completionPct = subtasks.length > 0 ? Math.round((finalCount / subtasks.length) * 100) : 100
-        return { ...card, subtasks, doneCount, subtaskCount: subtasks.length, completionPct }
-      }
-      return card
-    }))
+    setCards((cs) => cs.map((card) => (
+      card.id === cardId
+        ? withSubtasks(card, (card.subtasks || []).filter((s) => s.id !== subtaskId))
+        : card
+    )))
     api.removeSubtask(subtaskId).catch(onApiError)
   }
 
@@ -520,8 +504,12 @@ export default function App() {
       const a = document.createElement('a')
       a.href = url
       a.download = `${slug}-${new Date().toISOString().slice(0, 10)}.json`
+      // Firefox only starts the download for a link that is in the document, and
+      // it needs the object URL to outlive the click.
+      document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(url)
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 10_000)
     } catch (error) {
       onApiError(error)
     }
@@ -530,14 +518,24 @@ export default function App() {
     const file = e.target.files?.[0]
     if (!file || !activeBoardId) return
     const reader = new FileReader()
+    reader.onerror = () => alert('The file could not be read.')
     reader.onload = async () => {
+      let data
       try {
-        const data = JSON.parse(reader.result)
-        if (!Array.isArray(data)) return alert('Invalid backup format.')
-        if (!confirm(`Replace all cards in “${activeBoard.name}” with ${data.length} imported cards?`)) return
+        data = JSON.parse(reader.result)
+      } catch (err) {
+        console.error(err)
+        return alert('This file is not valid JSON.')
+      }
+      if (!Array.isArray(data)) return alert('Invalid backup format.')
+      if (!confirm(`Replace all cards in “${activeBoard?.name || 'this board'}” with ${data.length} imported cards?`)) return
+      try {
         setCards(await api.importBoard(activeBoardId, data))
         refreshBoards()
-      } catch (err) { alert('The backup could not be imported.'); console.error(err) }
+      } catch (err) {
+        console.error(err)
+        alert(err?.message || 'The backup could not be imported.')
+      }
     }
     reader.readAsText(file)
     e.target.value = ''
@@ -632,7 +630,7 @@ export default function App() {
       {undo && (
         <div className="banner undo" role="status">
           <span className="undo-text">
-            Moved “{undo.title}” to {COLUMNS.find((c) => c.id === undo.to)?.title || undo.to}.
+            Moved “{undo.title}” to {laneLabel(undo.to)}.
           </span>
           <button type="button" className="btn tiny" onClick={undoMove}>Undo</button>
           <button type="button" className="banner-dismiss" onClick={() => setUndo(null)} aria-label="Dismiss">✕</button>
@@ -711,7 +709,7 @@ export default function App() {
         <div className="loading" role="status" aria-live="polite">Loading board …</div>
       ) : (
         <main className="board" id="main-board" aria-label={activeBoard ? `${activeBoard.name} Kanban board` : 'Kanban board'}>
-          {COLUMNS.map((col) => (
+          {LANES.map((col) => (
             <BoardColumn
               key={col.id}
               col={col}
@@ -921,7 +919,6 @@ function CardTile({ card, onOpen, onDragStart, onDragEnd, onMove, progressEntryB
   const phase = PHASES[card.phase]
   const nextStatus = card.status === 'todo' ? 'progress' : card.status === 'progress' ? 'done' : null
   const prevStatus = card.status === 'done' ? 'progress' : card.status === 'progress' ? 'todo' : null
-  const statusLabel = { todo: 'To Do', progress: 'In Progress', done: 'Done' }
 
   const [expanded, setExpanded] = useState(false)
   const [subtasksOpen, setSubtasksOpen] = useState(false)
@@ -1025,7 +1022,7 @@ function CardTile({ card, onOpen, onDragStart, onDragEnd, onMove, progressEntryB
             <button
               type="button"
               title={prevStatus === 'progress' && progressEntryBlocked ? 'In Progress limit reached' : 'Move back'}
-              aria-label={`Move ${card.title} to ${statusLabel[prevStatus]}`}
+              aria-label={`Move ${card.title} to ${LANE_LABELS[prevStatus]}`}
               onClick={() => onMove(prevStatus)}
               disabled={prevStatus === 'progress' && progressEntryBlocked}
             >◀</button>
@@ -1036,7 +1033,7 @@ function CardTile({ card, onOpen, onDragStart, onDragEnd, onMove, progressEntryB
               title={doneBlocked
                 ? 'Finish or mark all subtasks first'
                 : progressBlocked ? 'In Progress limit reached' : 'Move forward'}
-              aria-label={`Move ${card.title} to ${statusLabel[nextStatus]}`}
+              aria-label={`Move ${card.title} to ${LANE_LABELS[nextStatus]}`}
               onClick={() => onMove(nextStatus)}
               disabled={forwardBlocked}
             >▶</button>

@@ -1,6 +1,8 @@
 // Pure validation rules for the board editor, kept separate so they are easy to
 // read, reuse, and unit test without rendering the form.
 export const BOARD_NAME_MAX = 60
+export const BOARD_EMOJI_MAX = 8
+export const ACCENT_PATTERN = /^#[0-9a-f]{6}$/i
 export const SUBTASK_LIMIT_MIN = 1
 export const SUBTASK_LIMIT_MAX = 10
 export const PROGRESS_LIMIT_MIN = 1

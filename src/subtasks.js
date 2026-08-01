@@ -16,13 +16,32 @@ export const SUBTASK_STATUS_ORDER = ['todo', 'done', 'wont_do', 'question', 'old
 // (done / won't do / question / old).
 export const FINAL_SUBTASK_STATUSES = ['done', 'wont_do', 'question', 'old']
 
+export function isSubtaskStatus(value) {
+  return SUBTASK_STATUS_ORDER.includes(value)
+}
+
 export function subtasksResolved(subtasks = []) {
   return subtasks.every((subtask) => subtask.status !== 'todo')
 }
 
+// Completion figures shown on cards and used by the Done guard. Kept here so the
+// server and the optimistic client updates can never drift apart.
+export function subtaskSummary(subtasks = []) {
+  const finalCount = subtasks.filter((subtask) => FINAL_SUBTASK_STATUSES.includes(subtask.status)).length
+  return {
+    doneCount: subtasks.filter((subtask) => subtask.status === 'done').length,
+    subtaskCount: subtasks.length,
+    completionPct: subtasks.length > 0 ? Math.round((finalCount / subtasks.length) * 100) : 100,
+  }
+}
+
 // A card may only enter the Done lane when it has no unresolved subtasks.
-// Cards without subtasks are always allowed.
+// Cards without subtasks are always allowed. The loaded subtask list is checked
+// directly when available, so the client applies exactly the rule the server
+// enforces — a rounded percentage could read 100 while one subtask is still open.
 export function isDoneMoveAllowed(card) {
-  if (!card || (card.subtaskCount || 0) === 0) return true
+  if (!card) return true
+  if (Array.isArray(card.subtasks)) return subtasksResolved(card.subtasks)
+  if ((card.subtaskCount || 0) === 0) return true
   return (card.completionPct ?? 100) >= 100
 }

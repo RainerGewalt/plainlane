@@ -1,12 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { CATEGORIES } from './seed.js'
 import { keepFocusInside } from './dialog.js'
-
-const STATUS_LABELS = {
-  todo: 'To Do',
-  progress: 'In Progress',
-  done: 'Done',
-}
+import { LANE_LABELS as STATUS_LABELS } from './lanes.js'
 
 function archivedOn(timestamp) {
   if (!timestamp) return ''

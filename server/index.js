@@ -6,7 +6,9 @@ import { loadEnvFile } from 'node:process'
 import fs from 'node:fs'
 import path from 'path'
 import { SEED_CARDS } from '../src/seed.js'
-import { subtasksResolved } from '../src/subtasks.js'
+import { isSubtaskStatus, subtaskSummary, subtasksResolved } from '../src/subtasks.js'
+import { DEFAULT_LANE, LANE_IDS, isLaneId } from '../src/lanes.js'
+import { ACCENT_PATTERN, BOARD_EMOJI_MAX, BOARD_NAME_MAX } from '../src/validation.js'
 import { createDatabaseBackup } from './database-maintenance.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -285,6 +287,14 @@ function ensureInitialBoard() {
   return stmt.oneBoard.get(DEFAULT_BOARD.id)
 }
 
+const rndId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
+// Errors carrying a `status` are turned into a JSON response by the route that
+// throws them, or by the error handler at the end of this file.
+function httpError(status, message) {
+  return Object.assign(new Error(message), { status })
+}
+
 function hydrateResearch(run) {
   return { ...run, sources: stmt.researchSources.all(run.id) }
 }
@@ -292,10 +302,6 @@ function hydrateResearch(run) {
 function hydrateCard(row) {
   if (!row) return null
   const subtasks = stmt.cardSubtasks.all(row.id)
-  const finalStatuses = new Set(['done', 'wont_do', 'old', 'question'])
-  const doneCount = subtasks.filter(s => s.status === 'done').length
-  const finalCount = subtasks.filter(s => finalStatuses.has(s.status)).length
-  const completionPct = subtasks.length > 0 ? Math.round((finalCount / subtasks.length) * 100) : 100
 
   const latestSubtaskTime = subtasks.length > 0 ? Math.max(...subtasks.map(s => s.createdAt)) : row.createdAt
   const updatedAt = Math.max(row.createdAt || 0, row.statusChangedAt || 0, latestSubtaskTime || 0)
@@ -306,9 +312,7 @@ function hydrateCard(row) {
     researchRuns: stmt.cardResearch.all(row.id).map(hydrateResearch),
     documents: stmt.cardDocuments.all(row.id),
     subtasks,
-    completionPct,
-    doneCount,
-    subtaskCount: subtasks.length,
+    ...subtaskSummary(subtasks),
     updatedAt,
   }
 }
@@ -356,38 +360,79 @@ function parseProgressLimit(value) {
   if (value === null || value === undefined || String(value).trim() === '') return null
   const limit = Number(value)
   if (!Number.isInteger(limit) || limit < 1 || limit > 999) {
-    const error = new Error('In Progress limit must be empty or a whole number from 1 to 999.')
-    error.status = 400
-    throw error
+    throw httpError(400, 'In Progress limit must be empty or a whole number from 1 to 999.')
   }
   return limit
 }
 
 function toSqliteBoolean(value) {
-  return value === true || value === 1 || value === '1' ? 1 : 0
+  return value === true || value === 1 || value === '1' || value === 'true' ? 1 : 0
 }
 
-function progressLimitError(limit) {
-  const error = new Error(`In Progress limit (${limit}) reached for this board.`)
-  error.status = 409
-  return error
+function parseSubtaskLimit(value) {
+  return Math.max(1, Math.min(10, Number(value) || 10))
+}
+
+// Board text fields are validated here as well as in the browser form, so the
+// API can never store a nameless board or a colour the CSS cannot use.
+function parseBoardName(value) {
+  if (typeof value !== 'string') throw httpError(400, 'The board name must be text.')
+  const name = value.trim()
+  if (!name) throw httpError(400, 'Please enter a board name.')
+  if (name.length > BOARD_NAME_MAX) throw httpError(400, `Use ${BOARD_NAME_MAX} characters or fewer for the board name.`)
+  return name
+}
+
+function parseBoardEmoji(value) {
+  if (typeof value !== 'string') throw httpError(400, 'The board icon must be text.')
+  const emoji = value.trim().slice(0, BOARD_EMOJI_MAX)
+  if (!emoji) throw httpError(400, 'Pick a board icon.')
+  return emoji
+}
+
+function parseAccent(value) {
+  if (typeof value !== 'string' || !ACCENT_PATTERN.test(value.trim())) {
+    throw httpError(400, 'The board colour must be a hex value such as #4f46e5.')
+  }
+  return value.trim().toLowerCase()
+}
+
+// Cards live in exactly one of the three lanes; anything else would hide the
+// card from every column in the board view.
+function parseCardStatus(value, fallback = DEFAULT_LANE) {
+  if (value === undefined || value === null || value === '') return fallback
+  const status = String(value)
+  if (!isLaneId(status)) throw httpError(400, `Unknown lane “${status}”. Use ${LANE_IDS.join(', ')}.`)
+  return status
+}
+
+function parseSubtaskStatus(value, fallback = 'todo') {
+  if (value === undefined || value === null || value === '') return fallback
+  const status = String(value)
+  if (!isSubtaskStatus(status)) throw httpError(400, `Unknown subtask status “${status}”.`)
+  return status
 }
 
 function ensureProgressCapacity(boardId) {
   const board = stmt.oneBoard.get(boardId)
-  if (!board) {
-    const error = new Error('Unknown board.')
-    error.status = 400
-    throw error
-  }
+  if (!board) throw httpError(400, 'Unknown board.')
   if (board.progress_limit !== null && stmt.progressCount.get(boardId).n >= board.progress_limit) {
-    throw progressLimitError(board.progress_limit)
+    throw httpError(409, `In Progress limit (${board.progress_limit}) reached for this board.`)
   }
   return board
 }
 
+// Comments, subtasks, files, and research may only be attached to a card that is
+// not archived — the same rule the card editor itself enforces.
+function editableCard(id) {
+  const card = stmt.oneCard.get(id)
+  if (!card) throw httpError(404, 'Task not found.')
+  if (card.archivedAt !== null) throw httpError(409, 'Restore this task before editing it.')
+  return card
+}
+
 function insertResearch(cardId, run) {
-  const researchId = String(run.id || `r-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
+  const researchId = String(run.id || rndId('r'))
   stmt.insResearch.run({
     id: researchId,
     card_id: cardId,
@@ -439,22 +484,12 @@ function prepareDocument(payload) {
   const extension = path.extname(filename).toLowerCase()
   const mimeType = DOCUMENT_MIME_BY_EXTENSION[extension]
   if (!filename || !mimeType) {
-    const error = new Error('Allowed file types: PDF, email files, images, DOC, DOCX, ODT, and TXT.')
-    error.status = 400
-    throw error
+    throw httpError(400, 'Allowed file types: PDF, email files, images, DOC, DOCX, ODT, and TXT.')
   }
   const encoded = String(payload?.dataBase64 || '').replace(/^data:[^;]+;base64,/, '')
   const data = Buffer.from(encoded, 'base64')
-  if (!data.length) {
-    const error = new Error('The file is empty or could not be read.')
-    error.status = 400
-    throw error
-  }
-  if (data.length > MAX_DOCUMENT_BYTES) {
-    const error = new Error('The file is larger than 15 MB.')
-    error.status = 413
-    throw error
-  }
+  if (!data.length) throw httpError(400, 'The file is empty or could not be read.')
+  if (data.length > MAX_DOCUMENT_BYTES) throw httpError(413, 'The file is larger than 15 MB.')
   return {
     filename,
     mimeType,
@@ -468,7 +503,7 @@ function prepareDocument(payload) {
 function insertDocument(cardId, payload) {
   if (!payload?.dataBase64) return null
   const prepared = prepareDocument(payload)
-  const id = String(payload.id || `d-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
+  const id = String(payload.id || rndId('d'))
   stmt.insDocument.run({
     id,
     card_id: cardId,
@@ -497,19 +532,29 @@ function exportCards(boardId) {
 }
 
 // Replace every card on a board with the supplied list (seed and import).
+// Backups are hand-editable, so every field falls back to a usable value and an
+// unusable one is reported instead of aborting halfway through.
 const importIntoBoard = db.transaction((boardId, cards) => {
   stmt.delCardsByBoard.run(boardId)
+  const usedIds = new Set()
+  const uniqueId = (prefix, value) => {
+    const candidate = value === undefined || value === null || value === '' ? rndId(prefix) : String(value)
+    const id = usedIds.has(candidate) ? rndId(prefix) : candidate
+    usedIds.add(id)
+    return id
+  }
+
   cards.forEach((card, index) => {
-    const cardId = String(card.id)
+    const cardId = uniqueId('c', card.id)
     stmt.insCard.run({
       id: cardId,
       board_id: boardId,
-      title: card.title || 'Untitled task',
+      title: String(card.title || 'Untitled task'),
       category: card.category || null,
       phase: card.phase || null,
-      details: card.details || '',
-      contact: card.contact || '',
-      status: card.status || 'todo',
+      details: String(card.details || ''),
+      contact: String(card.contact || ''),
+      status: parseCardStatus(card.status),
       ord: Number.isFinite(card.ord) ? card.ord : index,
       createdAt: card.createdAt || Date.now(),
       status_changed_at: card.statusChangedAt || card.createdAt || Date.now(),
@@ -517,24 +562,26 @@ const importIntoBoard = db.transaction((boardId, cards) => {
     })
     ;(card.comments || []).forEach((comment) =>
       stmt.insComment.run({
-        id: String(comment.id),
+        id: uniqueId('m', comment.id),
         card_id: cardId,
-        text: comment.text,
+        text: String(comment.text || ''),
         ts: comment.ts || Date.now(),
       })
     )
-    ;(card.subtasks || []).forEach((subtask) =>
+    ;(card.subtasks || []).forEach((subtask, subtaskIndex) =>
       stmt.insSubtask.run({
-        id: String(subtask.id || `s-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+        id: uniqueId('s', subtask.id),
         card_id: cardId,
-        title: subtask.title || 'Unnamed subtask',
-        status: subtask.status || 'todo',
-        ord: Number.isFinite(subtask.ord) ? subtask.ord : undefined,
+        title: String(subtask.title || 'Unnamed subtask'),
+        status: parseSubtaskStatus(subtask.status),
+        ord: Number.isFinite(subtask.ord) ? subtask.ord : subtaskIndex,
         createdAt: subtask.createdAt || Date.now(),
       })
     )
-    ;(card.researchRuns || []).forEach((run) => insertResearch(cardId, run))
-    ;(card.documents || []).forEach((document) => insertDocument(cardId, document))
+    ;(card.researchRuns || []).forEach((run) => insertResearch(cardId, { ...run, id: uniqueId('r', run.id) }))
+    ;(card.documents || []).forEach((document) =>
+      insertDocument(cardId, { ...document, id: uniqueId('d', document.id) })
+    )
   })
 })
 
@@ -609,11 +656,7 @@ function extractResearch(response) {
 
 async function runWebResearch(card, board, question) {
   const apiKey = process.env.OPENAI_API_KEY
-  if (!apiKey) {
-    const error = new Error('OPENAI_API_KEY is missing. Add it to the local .env file.')
-    error.status = 503
-    throw error
-  }
+  if (!apiKey) throw httpError(503, 'OPENAI_API_KEY is missing. Add it to the local .env file.')
 
   const today = new Date().toISOString().slice(0, 10)
   const input = [
@@ -658,16 +701,17 @@ async function runWebResearch(card, board, question) {
 
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const error = new Error(payload.error?.message || `OpenAI request failed (HTTP ${response.status}).`)
-    error.status = response.status >= 500 ? 502 : 400
-    throw error
+    throw httpError(
+      response.status >= 500 ? 502 : 400,
+      payload.error?.message || `OpenAI request failed (HTTP ${response.status}).`
+    )
   }
 
   return { ...extractResearch(payload), model: payload.model || OPENAI_MODEL }
 }
 
 const saveResearch = db.transaction((cardId, question, result) => {
-  const id = `r-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  const id = rndId('r')
   insertResearch(cardId, {
     id,
     question,
@@ -678,8 +722,6 @@ const saveResearch = db.transaction((cardId, question, result) => {
   })
   return hydrateResearch(stmt.oneResearch.get(id))
 })
-
-const rndId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
 // ---------- API ----------
 const app = express()
@@ -700,22 +742,25 @@ app.post('/api/boards', (req, res) => {
   try {
     const board = {
       id: rndId('board'),
-      name: String(body.name || '').trim() || 'New board',
-      emoji: (body.emoji || '🗂️').slice(0, 8),
-      accent: body.accent || '#4f46e5',
+      name: parseBoardName(body.name === undefined ? 'New board' : body.name),
+      emoji: parseBoardEmoji(body.emoji === undefined ? '🗂️' : body.emoji),
+      accent: parseAccent(body.accent === undefined ? '#4f46e5' : body.accent),
       kind: 'generic',
       ord: stmt.maxBoardOrd.get().m + 1,
       createdAt: Date.now(),
-      subtask_limit: Math.max(1, Math.min(10, Number(body.subtask_limit) || 10)),
+      subtask_limit: parseSubtaskLimit(body.subtask_limit),
       progress_limit: parseProgressLimit(body.progress_limit),
       show_lane_age: toSqliteBoolean(body.show_lane_age),
     }
     stmt.insBoard.run(board)
     res.status(201).json({
       ...board,
+      archived_at: null,
+      deleted_at: null,
       cardCount: 0,
       doneCount: 0,
       progressCount: 0,
+      archivedCount: 0,
       openCount: 0,
     })
   } catch (error) {
@@ -732,10 +777,14 @@ app.put('/api/boards/:id', (req, res) => {
   try {
     if (keys.length) {
       const setSql = keys.map((key) => `${key} = @${key}`).join(', ')
-      const values = { ...body, id: req.params.id }
-      if ('subtask_limit' in body) {
-        values.subtask_limit = Math.max(1, Math.min(10, Number(body.subtask_limit) || 10))
-      }
+      // Every allowed key is normalised below, so nothing from the request body
+      // reaches SQLite unchecked.
+      const values = { id: req.params.id }
+      if ('name' in body) values.name = parseBoardName(body.name)
+      if ('emoji' in body) values.emoji = parseBoardEmoji(body.emoji)
+      if ('accent' in body) values.accent = parseAccent(body.accent)
+      if ('ord' in body) values.ord = Number(body.ord) || 0
+      if ('subtask_limit' in body) values.subtask_limit = parseSubtaskLimit(body.subtask_limit)
       if ('progress_limit' in body) {
         values.progress_limit = parseProgressLimit(body.progress_limit)
         const currentCount = stmt.progressCount.get(req.params.id).n
@@ -818,13 +867,22 @@ app.post('/api/boards/:id/import', (req, res) => {
   if (!board) return res.status(404).json({ error: 'Board not found.' })
   const cards = req.body?.cards
   if (!Array.isArray(cards)) return res.status(400).json({ error: 'Expected { cards: [...] }.' })
+  if (cards.some((card) => !card || typeof card !== 'object')) {
+    return res.status(400).json({ error: 'Every entry in the backup must be a task object.' })
+  }
   const progressCount = cards.filter((card) => !card.archivedAt && (card.status || 'todo') === 'progress').length
   if (board.progress_limit !== null && progressCount > board.progress_limit) {
     return res.status(409).json({
       error: `Import contains ${progressCount} In Progress tasks, exceeding this board's limit (${board.progress_limit}).`,
     })
   }
-  importIntoBoard(req.params.id, cards)
+  try {
+    importIntoBoard(req.params.id, cards)
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ error: error.message })
+    console.error('[import]', error)
+    return res.status(400).json({ error: 'The backup could not be imported. Please check the file.' })
+  }
   res.json(listCards(req.params.id))
 })
 
@@ -833,30 +891,30 @@ app.post('/api/cards', (req, res) => {
   const body = req.body || {}
   const boardId = String(body.board_id || DEFAULT_BOARD.id)
   if (!stmt.oneActiveBoard.get(boardId)) return res.status(400).json({ error: 'Unknown active board.' })
-  const status = body.status || 'todo'
   try {
+    const status = parseCardStatus(body.status)
     if (status === 'progress') ensureProgressCapacity(boardId)
+    const id = String(body.id || rndId('c'))
+    if (stmt.oneCard.get(id)) return res.status(409).json({ error: 'A task with this id already exists.' })
+    const createdAt = body.createdAt || Date.now()
+    stmt.insCard.run({
+      id,
+      board_id: boardId,
+      title: String(body.title || 'New task'),
+      category: body.category || null,
+      phase: body.phase || null,
+      details: String(body.details || ''),
+      contact: String(body.contact || ''),
+      status,
+      ord: stmt.maxOrd.get(boardId).m + 1,
+      createdAt,
+      status_changed_at: createdAt,
+      archived_at: null,
+    })
+    res.status(201).json(hydrateCard(stmt.oneCard.get(id)))
   } catch (error) {
-    return res.status(error.status || 400).json({ error: error.message })
+    res.status(error.status || 400).json({ error: error.message })
   }
-  const id = String(body.id || rndId('c'))
-  const createdAt = body.createdAt || Date.now()
-  const card = {
-    id,
-    board_id: boardId,
-    title: body.title || 'New task',
-    category: body.category || null,
-    phase: body.phase || null,
-    details: body.details || '',
-    contact: body.contact || '',
-    status,
-    ord: stmt.maxOrd.get(boardId).m + 1,
-    createdAt,
-    status_changed_at: createdAt,
-    archived_at: null,
-  }
-  stmt.insCard.run(card)
-  res.status(201).json(hydrateCard(stmt.oneCard.get(id)))
 })
 
 app.put('/api/cards/:id', (req, res) => {
@@ -867,11 +925,12 @@ app.put('/api/cards/:id', (req, res) => {
   }
   const body = req.body || {}
   const nextBoardId = 'board_id' in body ? String(body.board_id) : existing.board_id
-  const nextStatus = 'status' in body ? String(body.status) : existing.status
-  const entersProgress = nextStatus === 'progress'
-    && (existing.status !== 'progress' || existing.board_id !== nextBoardId)
 
   try {
+    const nextStatus = 'status' in body ? parseCardStatus(body.status, existing.status) : existing.status
+    const entersProgress = nextStatus === 'progress'
+      && (existing.status !== 'progress' || existing.board_id !== nextBoardId)
+
     if (!stmt.oneActiveBoard.get(nextBoardId)) {
       return res.status(400).json({ error: 'Unknown active board.' })
     }
@@ -887,7 +946,18 @@ app.put('/api/cards/:id', (req, res) => {
     const statusChanged = nextStatus !== existing.status
     if (keys.length || statusChanged) {
       const assignments = keys.map((key) => `${key} = @${key}`)
-      const values = { ...body, id: req.params.id }
+      // Only the allowed keys are bound, and each one is coerced to a type
+      // SQLite accepts so a malformed request cannot reach the driver.
+      const values = { id: req.params.id }
+      if ('status' in body) values.status = nextStatus
+      if ('board_id' in body) values.board_id = nextBoardId
+      if ('ord' in body) values.ord = Number(body.ord) || 0
+      if ('title' in body) values.title = String(body.title ?? '').trim() || 'Untitled task'
+      if ('details' in body) values.details = String(body.details ?? '')
+      if ('contact' in body) values.contact = String(body.contact ?? '')
+      for (const key of ['category', 'phase']) {
+        if (key in body) values[key] = body[key] ? String(body[key]) : null
+      }
       if (statusChanged) {
         assignments.push('status_changed_at = @status_changed_at')
         values.status_changed_at = Date.now()
@@ -936,27 +1006,31 @@ app.delete('/api/cards/:id', (req, res) => {
 
 // ----- Subtasks -----
 app.post('/api/cards/:id/subtasks', (req, res) => {
-  const card = stmt.oneCard.get(req.params.id)
-  if (!card) return res.status(404).json({ error: 'Task not found.' })
-  const board = stmt.oneBoard.get(card.board_id)
-  const limit = board?.subtask_limit || 10
-  const currentCount = stmt.cardSubtasks.all(req.params.id).length
-  if (currentCount >= limit) {
-    return res.status(409).json({ error: `Subtask limit (${limit}) reached for this board.` })
+  try {
+    const card = editableCard(req.params.id)
+    const board = stmt.oneBoard.get(card.board_id)
+    const limit = board?.subtask_limit || 10
+    const subtasks = stmt.cardSubtasks.all(req.params.id)
+    if (subtasks.length >= limit) {
+      return res.status(409).json({ error: `Subtask limit (${limit}) reached for this board.` })
+    }
+    const title = String(req.body?.title || '').trim().slice(0, 500)
+    if (!title) return res.status(400).json({ error: 'Subtask title cannot be empty.' })
+    const subtaskId = rndId('s')
+    stmt.insSubtask.run({
+      id: subtaskId,
+      card_id: req.params.id,
+      title,
+      status: 'todo',
+      // Continue after the highest position so a deleted subtask cannot leave
+      // two siblings sharing one order value.
+      ord: subtasks.reduce((max, subtask) => Math.max(max, subtask.ord), -1) + 1,
+      createdAt: Date.now(),
+    })
+    res.status(201).json(stmt.oneSubtask.get(subtaskId))
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message })
   }
-  const title = String(req.body?.title || '').trim()
-  if (!title) return res.status(400).json({ error: 'Subtask title cannot be empty.' })
-  const subtaskId = rndId('s')
-  const maxSubtaskOrd = stmt.cardSubtasks.all(req.params.id).length
-  stmt.insSubtask.run({
-    id: subtaskId,
-    card_id: req.params.id,
-    title,
-    status: 'todo',
-    ord: maxSubtaskOrd,
-    createdAt: Date.now(),
-  })
-  res.status(201).json(stmt.cardSubtasks.all(req.params.id).find(s => s.id === subtaskId))
 })
 
 app.put('/api/subtasks/:id', (req, res) => {
@@ -965,15 +1039,19 @@ app.put('/api/subtasks/:id', (req, res) => {
   const body = req.body || {}
   const allowed = ['title', 'status', 'ord']
   const keys = allowed.filter((key) => key in body)
-  if (keys.length) {
-    const setSql = keys.map((key) => `${key} = @${key}`).join(', ')
-    const updates = { id: req.params.id }
-    if ('title' in body) updates.title = String(body.title || '').trim() || 'Unnamed'
-    if ('status' in body) updates.status = String(body.status || 'todo')
-    if ('ord' in body) updates.ord = Number(body.ord) || 0
-    db.prepare(`UPDATE subtasks SET ${setSql} WHERE id = @id`).run(updates)
+  try {
+    if (keys.length) {
+      const setSql = keys.map((key) => `${key} = @${key}`).join(', ')
+      const updates = { id: req.params.id }
+      if ('title' in body) updates.title = String(body.title || '').trim().slice(0, 500) || 'Unnamed'
+      if ('status' in body) updates.status = parseSubtaskStatus(body.status, existing.status)
+      if ('ord' in body) updates.ord = Number(body.ord) || 0
+      db.prepare(`UPDATE subtasks SET ${setSql} WHERE id = @id`).run(updates)
+    }
+    res.json(stmt.oneSubtask.get(req.params.id))
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message })
   }
-  res.json(stmt.oneSubtask.get(req.params.id))
 })
 
 app.delete('/api/subtasks/:id', (req, res) => {
@@ -982,13 +1060,16 @@ app.delete('/api/subtasks/:id', (req, res) => {
 })
 
 app.post('/api/cards/:id/comments', (req, res) => {
-  const card = stmt.oneCard.get(req.params.id)
-  if (!card) return res.status(404).json({ error: 'Task not found.' })
-  const text = (req.body?.text || '').trim()
-  if (!text) return res.status(400).json({ error: 'The comment is empty.' })
-  const comment = { id: rndId('m'), card_id: req.params.id, text, ts: Date.now() }
-  stmt.insComment.run(comment)
-  res.status(201).json({ id: comment.id, text: comment.text, ts: comment.ts })
+  try {
+    const card = editableCard(req.params.id)
+    const text = String(req.body?.text || '').trim()
+    if (!text) return res.status(400).json({ error: 'The comment is empty.' })
+    const comment = { id: rndId('m'), card_id: card.id, text, ts: Date.now() }
+    stmt.insComment.run(comment)
+    res.status(201).json({ id: comment.id, text: comment.text, ts: comment.ts })
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message })
+  }
 })
 
 app.delete('/api/comments/:id', (req, res) => {
@@ -998,9 +1079,8 @@ app.delete('/api/comments/:id', (req, res) => {
 
 // ----- Files and saved emails -----
 app.post('/api/cards/:id/documents', (req, res) => {
-  const card = stmt.oneCard.get(req.params.id)
-  if (!card) return res.status(404).json({ error: 'Task not found.' })
   try {
+    const card = editableCard(req.params.id)
     res.status(201).json(insertDocument(card.id, req.body || {}))
   } catch (error) {
     res.status(error.status || 400).json({ error: error.message })
@@ -1036,10 +1116,14 @@ app.delete('/api/documents/:id', (req, res) => {
 })
 
 app.post('/api/cards/:id/research', async (req, res) => {
-  const card = stmt.oneCard.get(req.params.id)
-  if (!card) return res.status(404).json({ error: 'Task not found.' })
-  if (card.status !== 'progress') {
-    return res.status(409).json({ error: 'AI research is available only for cards in “In Progress”.' })
+  let card
+  try {
+    card = editableCard(req.params.id)
+    if (card.status !== 'progress') {
+      return res.status(409).json({ error: 'AI research is available only for cards in “In Progress”.' })
+    }
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message })
   }
   const board = stmt.oneBoard.get(card.board_id)
   const question = String(req.body?.question || '').trim().slice(0, 1200)
@@ -1059,6 +1143,18 @@ app.post('/api/cards/:id/research', async (req, res) => {
 app.delete('/api/research/:id', (req, res) => {
   stmt.delResearch.run(req.params.id)
   res.status(204).end()
+})
+
+// Last line of defence: the client expects JSON, and an Express stack trace page
+// would leak local file paths into the browser.
+app.use((error, _req, res, _next) => {
+  const status = Number.isInteger(error.status) && error.status >= 400 && error.status <= 599
+    ? error.status
+    : 500
+  if (status >= 500) console.error('[api]', error)
+  res.status(status).json({
+    error: status >= 500 ? 'Unexpected server error. Check the server log.' : error.message,
+  })
 })
 
 app.listen(PORT, HOST, () => {

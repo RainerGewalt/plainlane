@@ -378,7 +378,7 @@ export default function CardModal({
         {!edit ? (
           <>
             <div className="card-tags">
-              <span className="tag cat">{cat.label}</span>
+              {card.category && <span className="tag cat">{cat.label}</span>}
               {phase && <span className="tag phase" style={{ '--ph': phase.color }}>{phase.label}</span>}
             </div>
             <h2 className="modal-title" id={titleId}>{card.title}</h2>
@@ -405,7 +405,11 @@ export default function CardModal({
             </label>
             <div className="row2">
               <label>Category
-                <select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>
+                <select
+                  value={draft.category || ''}
+                  onChange={(event) => setDraft({ ...draft, category: event.target.value || null })}
+                >
+                  <option value="">— none —</option>
                   {Object.entries(CATEGORIES).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
                 </select>
               </label>
