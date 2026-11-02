@@ -1,0 +1,583 @@
+[
+  {
+    "id": "ch-rental-contract",
+    "title": "Sign the rental contract",
+    "category": "admin",
+    "phase": "focus",
+    "status": "done",
+    "contact": "Property management",
+    "details": "Apartment in the new city. Keep the signed contract, the deposit confirmation, and the agreed handover date on this card.",
+    "subtasks": [
+      {
+        "id": "ch-rental-s1",
+        "title": "Read the contract and the house rules",
+        "status": "done",
+        "ord": 0,
+        "createdAt": 1782662400000
+      },
+      {
+        "id": "ch-rental-s2",
+        "title": "Sign and return both copies",
+        "status": "done",
+        "ord": 1,
+        "createdAt": 1782662400001
+      },
+      {
+        "id": "ch-rental-s3",
+        "title": "Transfer the rental deposit",
+        "status": "done",
+        "ord": 2,
+        "createdAt": 1782662400002
+      },
+      {
+        "id": "ch-rental-s4",
+        "title": "Store the countersigned copy",
+        "status": "done",
+        "ord": 3,
+        "createdAt": 1782662400003
+      }
+    ],
+    "comments": [
+      {
+        "id": "ch-rental-c1",
+        "text": "Countersigned copy arrived by post and is attached to this card.",
+        "ts": 1783180800000
+      }
+    ],
+    "documents": [
+      {
+        "id": "ch-rental-d1",
+        "filename": "rental-contract.txt",
+        "kind": "contract",
+        "status": "confirmed",
+        "note": "Fictional contract, included only to show that files travel with an export.",
+        "dataBase64": "RmljdGlvbmFsIHJlbnRhbCBjb250cmFjdC4gU2FtcGxlIGNvbnRlbnQgb25seSwgbm8gcGVyc29uYWwgZGF0YS4=",
+        "createdAt": 1783180800001
+      }
+    ],
+    "researchRuns": [],
+    "createdAt": 1782662400000,
+    "statusChangedAt": 1783267200000
+  },
+  {
+    "id": "ch-movers",
+    "title": "Book the international movers",
+    "category": "finance",
+    "phase": "focus",
+    "status": "done",
+    "contact": "Moving company",
+    "details": "Compare quotes, check the insurance cover, and confirm the loading and delivery dates.",
+    "subtasks": [
+      {
+        "id": "ch-movers-s1",
+        "title": "Collect three written quotes",
+        "status": "done",
+        "ord": 0,
+        "createdAt": 1783008000000
+      },
+      {
+        "id": "ch-movers-s2",
+        "title": "Compare the insurance cover",
+        "status": "done",
+        "ord": 1,
+        "createdAt": 1783008000001
+      },
+      {
+        "id": "ch-movers-s3",
+        "title": "Confirm the moving date in writing",
+        "status": "done",
+        "ord": 2,
+        "createdAt": 1783008000002
+      },
+      {
+        "id": "ch-movers-s4",
+        "title": "Ask about a parking permit for the truck",
+        "status": "wont_do",
+        "ord": 3,
+        "createdAt": 1783008000003
+      }
+    ],
+    "comments": [],
+    "documents": [
+      {
+        "id": "ch-movers-d1",
+        "filename": "moving-quote.txt",
+        "kind": "proof",
+        "status": "confirmed",
+        "note": "Accepted quote. Fictional sample file.",
+        "dataBase64": "RmljdGlvbmFsIG1vdmluZyBxdW90ZS4gU2FtcGxlIGNvbnRlbnQgb25seSwgbm8gcGVyc29uYWwgZGF0YS4=",
+        "createdAt": 1783526400000
+      }
+    ],
+    "researchRuns": [],
+    "createdAt": 1783008000000,
+    "statusChangedAt": 1783785600000
+  },
+  {
+    "id": "ch-residence-permit",
+    "title": "Apply for the residence permit",
+    "category": "important",
+    "phase": "focus",
+    "status": "progress",
+    "contact": "Cantonal migration office",
+    "details": "The application was submitted with the employment contract and the rental contract. Track the fee receipt, the acknowledgement, and the written decision here.",
+    "subtasks": [
+      {
+        "id": "ch-permit-s1",
+        "title": "Complete the application form",
+        "status": "done",
+        "ord": 0,
+        "createdAt": 1784563200000
+      },
+      {
+        "id": "ch-permit-s2",
+        "title": "Attach passport copy and photo",
+        "status": "done",
+        "ord": 1,
+        "createdAt": 1784563200001
+      },
+      {
+        "id": "ch-permit-s3",
+        "title": "Pay the processing fee",
+        "status": "done",
+        "ord": 2,
+        "createdAt": 1784563200002
+      },
+      {
+        "id": "ch-permit-s4",
+        "title": "Wait for the written decision",
+        "status": "question",
+        "ord": 3,
+        "createdAt": 1784563200003
+      }
+    ],
+    "comments": [
+      {
+        "id": "ch-permit-c1",
+        "text": "Acknowledgement received. The office states a processing time of several weeks.",
+        "ts": 1785081600000
+      }
+    ],
+    "documents": [
+      {
+        "id": "ch-permit-d1",
+        "filename": "application-acknowledgement.eml",
+        "kind": "email",
+        "status": "confirmed",
+        "note": "Saved acknowledgement email. Fictional sample file.",
+        "dataBase64": "RnJvbTogb2ZmaWNlQGV4YW1wbGUuaW52YWxpZApUbzogYXBwbGljYW50QGV4YW1wbGUuaW52YWxpZApTdWJqZWN0OiBBcHBsaWNhdGlvbiByZWNlaXZlZAoKRmljdGlvbmFsIGFja25vd2xlZGdlbWVudC4gU2FtcGxlIGNvbnRlbnQgb25seS4=",
+        "createdAt": 1785081600001
+      },
+      {
+        "id": "ch-permit-d2",
+        "filename": "fee-receipt.txt",
+        "kind": "proof",
+        "status": "sent",
+        "note": "Payment receipt for the processing fee.",
+        "dataBase64": "RmljdGlvbmFsIGZlZSByZWNlaXB0LiBTYW1wbGUgY29udGVudCBvbmx5Lg==",
+        "createdAt": 1784822400000
+      }
+    ],
+    "researchRuns": [
+      {
+        "id": "ch-permit-r1",
+        "question": "Which documents are usually required for a residence permit application?",
+        "summary": "Applications are normally filed with the cantonal migration office after arrival. Typical attachments are a valid passport, a passport photo, the employment contract, and proof of accommodation such as the rental contract. Requirements and fees differ by canton, so the responsible office publishes the binding checklist.",
+        "model": "gpt-5.6",
+        "createdAt": 1784649600000,
+        "sources": [
+          {
+            "id": "ch-permit-r1-s0",
+            "url": "https://example.invalid/migration-office",
+            "title": "Cantonal migration office — permit checklist",
+            "startIndex": -1,
+            "endIndex": -1,
+            "isCitation": false
+          },
+          {
+            "id": "ch-permit-r1-s1",
+            "url": "https://example.invalid/relocation-guide",
+            "title": "Relocation guide — first steps after arrival",
+            "startIndex": -1,
+            "endIndex": -1,
+            "isCitation": false
+          }
+        ]
+      }
+    ],
+    "createdAt": 1784563200000,
+    "statusChangedAt": 1785081600000
+  },
+  {
+    "id": "ch-municipality",
+    "title": "Register at the municipality",
+    "category": "admin",
+    "phase": "focus",
+    "status": "progress",
+    "contact": "Residents registration office",
+    "details": "Registration has to happen shortly after arrival. Bring passports, the rental contract, and the permit confirmation to the appointment.",
+    "subtasks": [
+      {
+        "id": "ch-muni-s1",
+        "title": "Book an appointment",
+        "status": "done",
+        "ord": 0,
+        "createdAt": 1784908800000
+      },
+      {
+        "id": "ch-muni-s2",
+        "title": "Prepare the document folder",
+        "status": "done",
+        "ord": 1,
+        "createdAt": 1784908800001
+      },
+      {
+        "id": "ch-muni-s3",
+        "title": "Attend the appointment",
+        "status": "todo",
+        "ord": 2,
+        "createdAt": 1784908800002
+      },
+      {
+        "id": "ch-muni-s4",
+        "title": "File the registration confirmation",
+        "status": "todo",
+        "ord": 3,
+        "createdAt": 1784908800003
+      }
+    ],
+    "comments": [],
+    "documents": [
+      {
+        "id": "ch-muni-d1",
+        "filename": "appointment-confirmation.eml",
+        "kind": "email",
+        "status": "confirmed",
+        "note": "Appointment confirmation. Fictional sample file.",
+        "dataBase64": "RnJvbTogcmVnaXN0cmF0aW9uQGV4YW1wbGUuaW52YWxpZApUbzogcmVzaWRlbnRAZXhhbXBsZS5pbnZhbGlkClN1YmplY3Q6IEFwcG9pbnRtZW50IGNvbmZpcm1lZAoKRmljdGlvbmFsIGFwcG9pbnRtZW50IGNvbmZpcm1hdGlvbi4gU2FtcGxlIGNvbnRlbnQgb25seS4=",
+        "createdAt": 1784995200000
+      }
+    ],
+    "researchRuns": [
+      {
+        "id": "ch-muni-r1",
+        "question": "What has to be brought to the residents registration appointment?",
+        "summary": "Municipalities usually ask for identity documents for every person moving in, the rental contract or a landlord confirmation, and the permit documents. Families are often asked for marriage or birth certificates. The municipality publishes the exact list and the registration deadline.",
+        "model": "gpt-5.6",
+        "createdAt": 1784995200002,
+        "sources": [
+          {
+            "id": "ch-muni-r1-s0",
+            "url": "https://example.invalid/municipality-registration",
+            "title": "Municipality — registering a new address",
+            "startIndex": -1,
+            "endIndex": -1,
+            "isCitation": false
+          }
+        ]
+      }
+    ],
+    "createdAt": 1784908800000,
+    "statusChangedAt": 1785340800000
+  },
+  {
+    "id": "ch-health-insurance",
+    "title": "Choose basic health insurance",
+    "category": "finance",
+    "phase": "focus",
+    "status": "todo",
+    "contact": "",
+    "details": "Basic insurance is mandatory and has to be arranged within the first months. Compare the insurance model, the deductible, and the monthly premium before applying.",
+    "subtasks": [
+      {
+        "id": "ch-health-s1",
+        "title": "Compare three providers",
+        "status": "done",
+        "ord": 0,
+        "createdAt": 1785168000000
+      },
+      {
+        "id": "ch-health-s2",
+        "title": "Decide on the deductible",
+        "status": "todo",
+        "ord": 1,
+        "createdAt": 1785168000001
+      },
+      {
+        "id": "ch-health-s3",
+        "title": "Submit the application",
+        "status": "todo",
+        "ord": 2,
+        "createdAt": 1785168000002
+      }
+    ],
+    "comments": [
+      {
+        "id": "ch-health-c1",
+        "text": "Premium comparison saved as a note; the family discount still needs to be checked.",
+        "ts": 1785254400000
+      }
+    ],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1785168000000,
+    "statusChangedAt": 1785168000000
+  },
+  {
+    "id": "ch-bank-account",
+    "title": "Open a local bank account",
+    "category": "finance",
+    "phase": "next",
+    "status": "todo",
+    "contact": "",
+    "details": "Needed for salary payments and standing orders. Compare account fees and card options first.",
+    "subtasks": [
+      {
+        "id": "ch-bank-s1",
+        "title": "Compare account fees",
+        "status": "todo",
+        "ord": 0,
+        "createdAt": 1785168000003
+      },
+      {
+        "id": "ch-bank-s2",
+        "title": "Book the opening appointment",
+        "status": "todo",
+        "ord": 1,
+        "createdAt": 1785168000004
+      }
+    ],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1785168000003,
+    "statusChangedAt": 1785168000003
+  },
+  {
+    "id": "ch-old-contracts",
+    "title": "Cancel the contracts at the old address",
+    "category": "waiting",
+    "phase": "next",
+    "status": "todo",
+    "contact": "",
+    "details": "Electricity, internet, and household insurance were cancelled in writing. Written confirmations are still open.",
+    "subtasks": [
+      {
+        "id": "ch-old-s1",
+        "title": "Cancel electricity",
+        "status": "done",
+        "ord": 0,
+        "createdAt": 1784736000000
+      },
+      {
+        "id": "ch-old-s2",
+        "title": "Cancel internet",
+        "status": "done",
+        "ord": 1,
+        "createdAt": 1784736000001
+      },
+      {
+        "id": "ch-old-s3",
+        "title": "Cancel household insurance",
+        "status": "todo",
+        "ord": 2,
+        "createdAt": 1784736000002
+      },
+      {
+        "id": "ch-old-s4",
+        "title": "Collect the confirmations",
+        "status": "todo",
+        "ord": 3,
+        "createdAt": 1784736000003
+      }
+    ],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1784736000000,
+    "statusChangedAt": 1784736000000
+  },
+  {
+    "id": "ch-connectivity",
+    "title": "Set up mobile and internet at the new address",
+    "category": "general",
+    "phase": "next",
+    "status": "todo",
+    "contact": "",
+    "details": "Compare offers, save the chosen order confirmation, and note the activation date.",
+    "subtasks": [],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1785254400000,
+    "statusChangedAt": 1785254400000
+  },
+  {
+    "id": "ch-driving-licence",
+    "title": "Exchange the driving licence",
+    "category": "admin",
+    "phase": "later",
+    "status": "todo",
+    "contact": "",
+    "details": "The exchange has to be requested within the first year after arrival. Keep the form and the confirmation here.",
+    "subtasks": [],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1785340800000,
+    "statusChangedAt": 1785340800000
+  },
+  {
+    "id": "ch-school",
+    "title": "Plan the school registration",
+    "category": "important",
+    "phase": "later",
+    "status": "todo",
+    "contact": "",
+    "details": "Ask the municipality which school district applies and which documents the registration needs.",
+    "subtasks": [],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1785340800001,
+    "statusChangedAt": 1785340800001
+  },
+  {
+    "id": "ch-waste",
+    "title": "Learn the local waste and recycling rules",
+    "category": "idea",
+    "phase": "later",
+    "status": "todo",
+    "contact": "",
+    "details": "Collection days, official rubbish bags, and recycling points differ per municipality.",
+    "subtasks": [],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1785427200000,
+    "statusChangedAt": 1785427200000
+  },
+  {
+    "id": "ch-flights",
+    "title": "Book the flights and the first nights",
+    "category": "general",
+    "phase": "focus",
+    "status": "done",
+    "contact": "",
+    "details": "Travel is booked and confirmed. Archived so the Done lane stays readable.",
+    "subtasks": [
+      {
+        "id": "ch-flights-s1",
+        "title": "Book the flights",
+        "status": "done",
+        "ord": 0,
+        "createdAt": 1782144000000
+      },
+      {
+        "id": "ch-flights-s2",
+        "title": "Book the first two nights",
+        "status": "done",
+        "ord": 1,
+        "createdAt": 1782144000001
+      }
+    ],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1782144000000,
+    "statusChangedAt": 1782748800000,
+    "archivedAt": 1783872000000
+  },
+  {
+    "id": "ch-notice-old-flat",
+    "title": "Give notice on the old apartment",
+    "category": "admin",
+    "phase": "focus",
+    "status": "done",
+    "contact": "Former landlord",
+    "details": "Notice sent by registered letter and confirmed in writing. Kept for the deposit return.",
+    "subtasks": [
+      {
+        "id": "ch-notice-s1",
+        "title": "Check the notice period",
+        "status": "done",
+        "ord": 0,
+        "createdAt": 1781107200000
+      },
+      {
+        "id": "ch-notice-s2",
+        "title": "Send the notice by registered letter",
+        "status": "done",
+        "ord": 1,
+        "createdAt": 1781107200001
+      },
+      {
+        "id": "ch-notice-s3",
+        "title": "File the written confirmation",
+        "status": "done",
+        "ord": 2,
+        "createdAt": 1781107200002
+      }
+    ],
+    "comments": [
+      {
+        "id": "ch-notice-c1",
+        "text": "Confirmation received; the handover date is agreed.",
+        "ts": 1781798400000
+      }
+    ],
+    "documents": [
+      {
+        "id": "ch-notice-d1",
+        "filename": "notice-confirmation.txt",
+        "kind": "proof",
+        "status": "confirmed",
+        "note": "Fictional confirmation letter.",
+        "dataBase64": "RmljdGlvbmFsIG5vdGljZSBjb25maXJtYXRpb24uIFNhbXBsZSBjb250ZW50IG9ubHku",
+        "createdAt": 1781798400001
+      }
+    ],
+    "researchRuns": [],
+    "createdAt": 1781107200000,
+    "statusChangedAt": 1781798400000,
+    "archivedAt": 1783526400000
+  },
+  {
+    "id": "ch-sell-car",
+    "title": "Sell the second car",
+    "category": "finance",
+    "phase": "next",
+    "status": "done",
+    "contact": "",
+    "details": "Sold before the move. Sales contract and deregistration confirmation are attached.",
+    "subtasks": [
+      {
+        "id": "ch-car-s1",
+        "title": "Get a valuation",
+        "status": "done",
+        "ord": 0,
+        "createdAt": 1781452800000
+      },
+      {
+        "id": "ch-car-s2",
+        "title": "Publish the listing",
+        "status": "done",
+        "ord": 1,
+        "createdAt": 1781452800001
+      },
+      {
+        "id": "ch-car-s3",
+        "title": "Deregister the vehicle",
+        "status": "done",
+        "ord": 2,
+        "createdAt": 1781452800002
+      }
+    ],
+    "comments": [],
+    "documents": [],
+    "researchRuns": [],
+    "createdAt": 1781452800000,
+    "statusChangedAt": 1782316800000,
+    "archivedAt": 1783699200000
+  }
+]

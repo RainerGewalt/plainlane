@@ -10,6 +10,13 @@ Plainlane is a small self-hosted task board with three lanes—**To Do**, **In P
 
 **Three lanes. One command. No project-management overhead.**
 
+## Project status
+
+Plainlane is a personal tool that I built for my own projects and keep
+maintaining for my own use. It is complete for that purpose and has no
+roadmap. Issues and pull requests are welcome and get a reply, but there is
+no release schedule and no promise of new features.
+
 ## Why Plainlane?
 
 Plainlane is built for tasks where the card is only the start: a form to submit, documents to collect, an email to save, a response to track, and several small steps to finish.
