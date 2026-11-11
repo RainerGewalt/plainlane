@@ -33,6 +33,7 @@ Do not add features outside this boundary unless the user or maintainer explicit
 ```bash
 npm install
 npm run dev
+npm test
 npm run build
 node --check server/index.js
 docker compose config
