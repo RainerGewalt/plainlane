@@ -6,7 +6,11 @@ Security fixes are applied to the latest release.
 
 ## Reporting a vulnerability
 
-Please use GitHub's private vulnerability reporting for this repository. Do not open a public issue for an unpatched vulnerability or include real board data, API keys, attachments, or database files in a report.
+Do not describe a suspected vulnerability in a public issue, pull request, or discussion.
+
+If the **Security** tab of this repository offers **Report a vulnerability**, use it: GitHub's private vulnerability reporting shows the report only to you and the maintainer. If that option is not available, open an issue that only asks for a private contact and contains no details about the problem; the details are then exchanged privately.
+
+Never include real board data, API keys, attachments, or database files in a report.
 
 ## Deployment model
 
